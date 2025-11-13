@@ -17,6 +17,20 @@ const Index = () => {
 
   const modules = [
     {
+      id: "fundamentals",
+      title: "C/C++ WinAPI Fundamentals",
+      icon: Code2,
+      description: "Essential Windows programming foundations - windows.h, types, handles, and core APIs",
+      difficulty: "Beginner",
+      topics: [
+        "Windows Data Types",
+        "Handles & Objects Model",
+        "Error Handling (GetLastError)",
+        "Strings & Unicode",
+        "Essential Header Files",
+      ]
+    },
+    {
       id: "windows-internals",
       title: "Windows Internals & Win32 API",
       icon: Shield,
@@ -61,7 +75,7 @@ const Index = () => {
     {
       id: "pinvoke",
       title: "P/Invoke & .NET Interop",
-      icon: Code2,
+      icon: Lock,
       description: "C# unmanaged code interop and marshalling",
       difficulty: "Advanced",
       topics: [
@@ -75,7 +89,7 @@ const Index = () => {
     {
       id: "evasion",
       title: "Evasion Techniques",
-      icon: Lock,
+      icon: Zap,
       description: "AV/EDR bypass and anti-analysis methods",
       difficulty: "Expert",
       topics: [
@@ -89,7 +103,7 @@ const Index = () => {
     {
       id: "shellcode",
       title: "Shellcode Development",
-      icon: Zap,
+      icon: Cpu,
       description: "Position-independent code and payload development",
       difficulty: "Expert",
       topics: [
@@ -128,7 +142,7 @@ const Index = () => {
       <div className="container mx-auto px-6 py-8">
         <Tabs value={currentModule} onValueChange={setCurrentModule} className="space-y-6">
           {/* Module Navigation */}
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 gap-2 bg-card p-2 h-auto">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 gap-2 bg-card p-2 h-auto">
             {modules.map((module) => {
               const Icon = module.icon;
               return (
