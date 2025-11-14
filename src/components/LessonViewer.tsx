@@ -1148,6 +1148,1204 @@ void EnumerateMemory(HANDLE hProc) {
           language: "c"
         }
       ]
+    },
+    labs: {
+      title: "Practical Labs - Build Real Tools",
+      sections: [
+        {
+          title: "Introduction to Security Tool Development",
+          content: `Welcome to the Practical Labs! Here you'll build real security tools step-by-step. These tools are used by security professionals, penetration testers, and red teamers to assess system security.
+
+WHAT YOU'LL BUILD:
+1. Process Memory Dumper - Extract process memory for analysis
+2. Memory Scanner - Find patterns in process memory
+3. Simple DLL Injector - Inject code into running processes
+
+LEGAL & ETHICAL NOTE:
+These tools are for educational purposes and legitimate security research only. Use them only on systems you own or have explicit written permission to test. Unauthorized use is illegal.
+
+PREREQUISITES:
+• Complete C/C++ WinAPI Fundamentals module
+• Understanding of Windows process architecture
+• Visual Studio or MinGW-w64 compiler
+• Windows SDK installed
+
+DEVELOPMENT ENVIRONMENT:
+• OS: Windows 10/11
+• Compiler: Visual Studio 2019+ or MinGW-w64
+• Debugger: x64dbg or WinDbg
+• Administrator privileges required for most operations`,
+          code: `// PROJECT SETUP
+// =============
+
+// Visual Studio:
+// 1. Create new C++ Console Application
+// 2. Project Properties -> C/C++ -> General -> Warning Level: /W4
+// 3. Project Properties -> Linker -> System -> SubSystem: Console
+// 4. Add required libraries in code with #pragma comment
+
+// MinGW-w64:
+// gcc tool.c -o tool.exe -lpsapi -ladvapi32 -municode
+
+// Common headers for all labs:
+#include <windows.h>
+#include <stdio.h>
+#include <psapi.h>
+#include <tlhelp32.h>
+
+#pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "advapi32.lib")
+
+// Enable SE_DEBUG_PRIVILEGE for all labs
+BOOL EnableDebugPrivilege() {
+    HANDLE hToken;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
+    
+    if (!OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &hToken)) {
+        wprintf(L"[!] OpenProcessToken failed: %lu\\n", 
+                GetLastError());
+        return FALSE;
+    }
+    
+    if (!LookupPrivilegeValueW(NULL, 
+            SE_DEBUG_NAME, &luid)) {
+        wprintf(L"[!] LookupPrivilegeValue failed: %lu\\n",
+                GetLastError());
+        CloseHandle(hToken);
+        return FALSE;
+    }
+    
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    
+    if (!AdjustTokenPrivileges(hToken, FALSE, 
+            &tp, sizeof(tp), NULL, NULL)) {
+        wprintf(L"[!] AdjustTokenPrivileges failed: %lu\\n",
+                GetLastError());
+        CloseHandle(hToken);
+        return FALSE;
+    }
+    
+    if (GetLastError() == ERROR_NOT_ALL_ASSIGNED) {
+        wprintf(L"[!] Not all privileges assigned\\n");
+        wprintf(L"[!] Run as Administrator!\\n");
+        CloseHandle(hToken);
+        return FALSE;
+    }
+    
+    CloseHandle(hToken);
+    wprintf(L"[+] SeDebugPrivilege enabled\\n");
+    return TRUE;
+}`,
+          language: "c"
+        },
+        {
+          title: "Lab 1: Process Memory Dumper",
+          content: `Build a tool that dumps the entire memory space of a target process to disk for offline analysis. This is essential for malware analysis, memory forensics, and reverse engineering.
+
+HOW IT WORKS:
+1. Find target process by name or PID
+2. Open process with PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
+3. Enumerate all memory regions using VirtualQueryEx
+4. Read committed, readable memory regions
+5. Write regions to individual files with metadata
+6. Create a map file describing the memory layout
+
+KEY CONCEPTS:
+• Memory regions have different states (MEM_COMMIT, MEM_RESERVE, MEM_FREE)
+• Only committed memory contains actual data
+• Memory protection flags determine readability
+• Virtual address space is sparse - many gaps
+• PE image sections (.text, .data, .rdata) appear as separate regions
+
+WHAT YOU'LL LEARN:
+• Process enumeration techniques
+• Virtual memory traversal
+• Memory protection flags
+• Error handling for partial reads
+• File I/O for binary data`,
+          code: `// PROCESS MEMORY DUMPER
+// =====================
+
+#include <windows.h>
+#include <stdio.h>
+#include <tlhelp32.h>
+#include <psapi.h>
+
+#pragma comment(lib, "psapi.lib")
+
+// Find process by name
+DWORD FindProcessByName(const wchar_t* procName) {
+    HANDLE hSnap = CreateToolhelp32Snapshot(
+        TH32CS_SNAPPROCESS, 0);
+    
+    if (hSnap == INVALID_HANDLE_VALUE) {
+        wprintf(L"[!] CreateToolhelp32Snapshot failed\\n");
+        return 0;
+    }
+    
+    PROCESSENTRY32W pe32;
+    pe32.dwSize = sizeof(pe32);
+    
+    if (!Process32FirstW(hSnap, &pe32)) {
+        CloseHandle(hSnap);
+        return 0;
+    }
+    
+    do {
+        if (_wcsicmp(pe32.szExeFile, procName) == 0) {
+            CloseHandle(hSnap);
+            wprintf(L"[+] Found %s (PID: %lu)\\n",
+                    procName, pe32.th32ProcessID);
+            return pe32.th32ProcessID;
+        }
+    } while (Process32NextW(hSnap, &pe32));
+    
+    CloseHandle(hSnap);
+    return 0;
+}
+
+// Dump single memory region
+BOOL DumpRegion(HANDLE hProc, 
+                MEMORY_BASIC_INFORMATION* mbi,
+                const wchar_t* outDir,
+                DWORD regionNum) {
+    
+    // Allocate buffer
+    BYTE* buffer = (BYTE*)malloc(mbi->RegionSize);
+    if (!buffer) {
+        wprintf(L"[!] malloc failed\\n");
+        return FALSE;
+    }
+    
+    // Read memory
+    SIZE_T bytesRead = 0;
+    BOOL result = ReadProcessMemory(
+        hProc,
+        mbi->BaseAddress,
+        buffer,
+        mbi->RegionSize,
+        &bytesRead);
+    
+    if (!result || bytesRead == 0) {
+        free(buffer);
+        return FALSE;
+    }
+    
+    // Build filename
+    wchar_t filename[MAX_PATH];
+    swprintf_s(filename, MAX_PATH,
+        L"%s\\\\region_%03lu_0x%016llX.bin",
+        outDir, regionNum,
+        (ULONGLONG)mbi->BaseAddress);
+    
+    // Write to file
+    HANDLE hFile = CreateFileW(
+        filename,
+        GENERIC_WRITE,
+        0,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+    
+    if (hFile == INVALID_HANDLE_VALUE) {
+        wprintf(L"[!] CreateFile failed: %lu\\n",
+                GetLastError());
+        free(buffer);
+        return FALSE;
+    }
+    
+    DWORD written = 0;
+    WriteFile(hFile, buffer, 
+              (DWORD)bytesRead, &written, NULL);
+    
+    CloseHandle(hFile);
+    free(buffer);
+    
+    wprintf(L"[+] Dumped region %lu: 0x%016llX "
+            L"[%6lluKB]\\n",
+            regionNum,
+            (ULONGLONG)mbi->BaseAddress,
+            bytesRead / 1024);
+    
+    return TRUE;
+}
+
+// Create memory map file
+void CreateMemoryMap(HANDLE hProc, 
+                     const wchar_t* outDir) {
+    wchar_t mapFile[MAX_PATH];
+    swprintf_s(mapFile, MAX_PATH,
+        L"%s\\\\memory_map.txt", outDir);
+    
+    HANDLE hFile = CreateFileW(
+        mapFile,
+        GENERIC_WRITE,
+        0, NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+    
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    
+    wchar_t header[] = 
+        L"MEMORY MAP\\r\\n"
+        L"==========\\r\\n\\r\\n"
+        L"Base Address        Size      "
+        L"State    Protect    Type\\r\\n"
+        L"----------------------------------"
+        L"----------------------------------\\r\\n";
+    
+    DWORD written;
+    WriteFile(hFile, header, 
+              (DWORD)(wcslen(header) * sizeof(wchar_t)),
+              &written, NULL);
+    
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID addr = NULL;
+    
+    while (VirtualQueryEx(hProc, addr, 
+                          &mbi, sizeof(mbi))) {
+        wchar_t line[512];
+        swprintf_s(line, 512,
+            L"0x%016llX  %8lluKB  "
+            L"%-8s %-10s %-10s\\r\\n",
+            (ULONGLONG)mbi.BaseAddress,
+            (ULONGLONG)mbi.RegionSize / 1024,
+            mbi.State == MEM_COMMIT ? L"COMMIT" :
+            mbi.State == MEM_RESERVE ? L"RESERVE" :
+            L"FREE",
+            mbi.Protect == PAGE_EXECUTE ? L"X" :
+            mbi.Protect == PAGE_EXECUTE_READ ? L"RX" :
+            mbi.Protect == PAGE_EXECUTE_READWRITE ? 
+                L"RWX" :
+            mbi.Protect == PAGE_READWRITE ? L"RW" :
+            mbi.Protect == PAGE_READONLY ? L"R" :
+            L"NONE",
+            mbi.Type == MEM_IMAGE ? L"IMAGE" :
+            mbi.Type == MEM_MAPPED ? L"MAPPED" :
+            mbi.Type == MEM_PRIVATE ? L"PRIVATE" :
+            L"");
+        
+        WriteFile(hFile, line,
+                  (DWORD)(wcslen(line) * 
+                          sizeof(wchar_t)),
+                  &written, NULL);
+        
+        addr = (BYTE*)mbi.BaseAddress + 
+               mbi.RegionSize;
+    }
+    
+    CloseHandle(hFile);
+    wprintf(L"[+] Memory map created\\n");
+}
+
+// Main dump function
+BOOL DumpProcess(DWORD pid, 
+                 const wchar_t* outDir) {
+    // Open process
+    HANDLE hProc = OpenProcess(
+        PROCESS_QUERY_INFORMATION | 
+        PROCESS_VM_READ,
+        FALSE, pid);
+    
+    if (!hProc) {
+        wprintf(L"[!] OpenProcess failed: %lu\\n",
+                GetLastError());
+        wprintf(L"[!] Try running as Admin\\n");
+        return FALSE;
+    }
+    
+    wprintf(L"[+] Opened process %lu\\n", pid);
+    
+    // Create output directory
+    CreateDirectoryW(outDir, NULL);
+    
+    // Enumerate and dump regions
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID addr = NULL;
+    DWORD regionNum = 0;
+    DWORD dumped = 0;
+    
+    wprintf(L"[*] Enumerating memory regions...\\n");
+    
+    while (VirtualQueryEx(hProc, addr, 
+                          &mbi, sizeof(mbi))) {
+        // Only dump committed, readable memory
+        if (mbi.State == MEM_COMMIT &&
+            (mbi.Protect == PAGE_READONLY ||
+             mbi.Protect == PAGE_READWRITE ||
+             mbi.Protect == PAGE_EXECUTE_READ ||
+             mbi.Protect == PAGE_EXECUTE_READWRITE)) {
+            
+            if (DumpRegion(hProc, &mbi, 
+                          outDir, regionNum)) {
+                dumped++;
+            }
+            regionNum++;
+        }
+        
+        addr = (BYTE*)mbi.BaseAddress + 
+               mbi.RegionSize;
+    }
+    
+    wprintf(L"[+] Dumped %lu regions\\n", dumped);
+    
+    // Create memory map
+    CreateMemoryMap(hProc, outDir);
+    
+    CloseHandle(hProc);
+    return TRUE;
+}
+
+int wmain(int argc, wchar_t* argv[]) {
+    wprintf(L"Process Memory Dumper\\n");
+    wprintf(L"=====================\\n\\n");
+    
+    if (argc != 3) {
+        wprintf(L"Usage: %s <process_name> "
+                L"<output_dir>\\n", argv[0]);
+        wprintf(L"Example: %s notepad.exe "
+                L"C:\\\\dumps\\\\notepad\\n", argv[0]);
+        return 1;
+    }
+    
+    // Enable debug privilege
+    if (!EnableDebugPrivilege()) {
+        wprintf(L"[!] Failed to enable "
+                L"SeDebugPrivilege\\n");
+        return 1;
+    }
+    
+    // Find process
+    DWORD pid = FindProcessByName(argv[1]);
+    if (pid == 0) {
+        wprintf(L"[!] Process not found\\n");
+        return 1;
+    }
+    
+    // Dump process
+    if (DumpProcess(pid, argv[2])) {
+        wprintf(L"\\n[+] Dump complete!\\n");
+        return 0;
+    }
+    
+    return 1;
+}
+
+// TESTING:
+// 1. Compile: cl dumper.c
+// 2. Run as Admin: dumper.exe notepad.exe C:\\dumps
+// 3. Check output directory for .bin files
+// 4. Open memory_map.txt to see layout
+// 5. Use hex editor to analyze .bin files`,
+          language: "c"
+        },
+        {
+          title: "Lab 2: Memory Scanner",
+          content: `Build a tool that searches for byte patterns, strings, or values in process memory. Essential for game hacking, malware analysis, and finding specific data structures.
+
+HOW IT WORKS:
+1. Open target process with read access
+2. Enumerate readable memory regions
+3. Search each region for the specified pattern
+4. Report all matches with addresses
+5. Support multiple search types (bytes, strings, integers)
+
+KEY CONCEPTS:
+• Pattern matching algorithms (naive vs KMP)
+• Handling partial reads at page boundaries
+• Performance optimization for large address spaces
+• Different data representations (hex, string, integer)
+• Memory region filtering (skip unreadable/guard pages)
+
+SEARCH TYPES:
+• Byte patterns: "48 8B ?? ?? 89" (? = wildcard)
+• ASCII strings: "password"
+• Wide strings: L"password"
+• Integers: Find DWORD value 1234
+• Floats: Find health/ammo values
+
+WHAT YOU'LL LEARN:
+• Efficient memory scanning techniques
+• Pattern matching with wildcards
+• String encoding detection
+• Performance optimization
+• Result filtering and display`,
+          code: `// MEMORY SCANNER
+// ==============
+
+#include <windows.h>
+#include <stdio.h>
+#include <tlhelp32.h>
+#include <string.h>
+
+// Pattern matching with wildcards
+BOOL MatchPattern(const BYTE* data, 
+                  const BYTE* pattern,
+                  const BYTE* mask,
+                  SIZE_T size) {
+    for (SIZE_T i = 0; i < size; i++) {
+        if (mask[i] && data[i] != pattern[i]) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+// Search for pattern in buffer
+void SearchBuffer(const BYTE* buffer,
+                  SIZE_T bufSize,
+                  LPVOID baseAddr,
+                  const BYTE* pattern,
+                  const BYTE* mask,
+                  SIZE_T patternSize,
+                  DWORD* matchCount) {
+    
+    for (SIZE_T i = 0; 
+         i <= bufSize - patternSize; 
+         i++) {
+        
+        if (MatchPattern(&buffer[i], 
+                        pattern, 
+                        mask, 
+                        patternSize)) {
+            
+            LPVOID matchAddr = 
+                (BYTE*)baseAddr + i;
+            
+            wprintf(L"[+] Found at: 0x%016llX\\n",
+                    (ULONGLONG)matchAddr);
+            
+            // Print context (16 bytes)
+            wprintf(L"    ");
+            for (SIZE_T j = 0; j < 16 && 
+                 i + j < bufSize; j++) {
+                wprintf(L"%02X ", buffer[i + j]);
+            }
+            wprintf(L"\\n");
+            
+            (*matchCount)++;
+        }
+    }
+}
+
+// Scan process memory for pattern
+DWORD ScanProcess(HANDLE hProc,
+                  const BYTE* pattern,
+                  const BYTE* mask,
+                  SIZE_T patternSize) {
+    
+    DWORD totalMatches = 0;
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID addr = NULL;
+    
+    wprintf(L"[*] Scanning memory...\\n\\n");
+    
+    while (VirtualQueryEx(hProc, addr, 
+                          &mbi, sizeof(mbi))) {
+        
+        // Only scan committed, readable memory
+        if (mbi.State == MEM_COMMIT &&
+            mbi.Protect != PAGE_NOACCESS &&
+            mbi.Protect != PAGE_GUARD &&
+            !(mbi.Protect & PAGE_GUARD)) {
+            
+            // Allocate buffer
+            BYTE* buffer = (BYTE*)malloc(
+                mbi.RegionSize);
+            
+            if (buffer) {
+                SIZE_T bytesRead = 0;
+                
+                if (ReadProcessMemory(
+                        hProc,
+                        mbi.BaseAddress,
+                        buffer,
+                        mbi.RegionSize,
+                        &bytesRead) && 
+                    bytesRead > 0) {
+                    
+                    // Search buffer
+                    SearchBuffer(
+                        buffer,
+                        bytesRead,
+                        mbi.BaseAddress,
+                        pattern,
+                        mask,
+                        patternSize,
+                        &totalMatches);
+                }
+                
+                free(buffer);
+            }
+        }
+        
+        addr = (BYTE*)mbi.BaseAddress + 
+               mbi.RegionSize;
+    }
+    
+    return totalMatches;
+}
+
+// Parse hex pattern string
+// Format: "48 8B ?? ?? 89" (? = wildcard)
+BOOL ParseHexPattern(const wchar_t* str,
+                     BYTE** outPattern,
+                     BYTE** outMask,
+                     SIZE_T* outSize) {
+    
+    // Count bytes
+    SIZE_T count = 0;
+    const wchar_t* p = str;
+    while (*p) {
+        if (*p != L' ') count++;
+        while (*p && *p != L' ') p++;
+        while (*p == L' ') p++;
+    }
+    count /= 2;
+    
+    if (count == 0) return FALSE;
+    
+    *outPattern = (BYTE*)malloc(count);
+    *outMask = (BYTE*)malloc(count);
+    *outSize = count;
+    
+    // Parse bytes
+    p = str;
+    SIZE_T idx = 0;
+    
+    while (*p && idx < count) {
+        while (*p == L' ') p++;
+        
+        if (p[0] == L'?' && p[1] == L'?') {
+            // Wildcard
+            (*outPattern)[idx] = 0;
+            (*outMask)[idx] = 0;
+            p += 2;
+        } else {
+            // Hex byte
+            wchar_t hex[3] = {p[0], p[1], 0};
+            (*outPattern)[idx] = 
+                (BYTE)wcstoul(hex, NULL, 16);
+            (*outMask)[idx] = 1;
+            p += 2;
+        }
+        
+        idx++;
+    }
+    
+    return TRUE;
+}
+
+// Search for ASCII string
+DWORD ScanForString(HANDLE hProc,
+                    const char* str) {
+    SIZE_T len = strlen(str);
+    return ScanProcess(
+        hProc,
+        (const BYTE*)str,
+        (const BYTE*)memset(
+            malloc(len), 1, len),
+        len);
+}
+
+// Search for wide string
+DWORD ScanForWideString(HANDLE hProc,
+                        const wchar_t* str) {
+    SIZE_T len = wcslen(str) * 
+                 sizeof(wchar_t);
+    
+    BYTE* mask = (BYTE*)malloc(len);
+    memset(mask, 1, len);
+    
+    return ScanProcess(
+        hProc,
+        (const BYTE*)str,
+        mask,
+        len);
+}
+
+// Search for DWORD value
+DWORD ScanForDword(HANDLE hProc,
+                   DWORD value) {
+    BYTE mask[4] = {1, 1, 1, 1};
+    return ScanProcess(
+        hProc,
+        (const BYTE*)&value,
+        mask,
+        sizeof(DWORD));
+}
+
+int wmain(int argc, wchar_t* argv[]) {
+    wprintf(L"Memory Scanner\\n");
+    wprintf(L"==============\\n\\n");
+    
+    if (argc < 4) {
+        wprintf(L"Usage:\\n");
+        wprintf(L"  %s <pid> bytes "
+                L"<pattern>\\n", argv[0]);
+        wprintf(L"  %s <pid> string "
+                L"<text>\\n", argv[0]);
+        wprintf(L"  %s <pid> wide "
+                L"<text>\\n", argv[0]);
+        wprintf(L"  %s <pid> dword "
+                L"<value>\\n", argv[0]);
+        wprintf(L"\\nExamples:\\n");
+        wprintf(L"  %s 1234 bytes "
+                L"\\"48 8B ?? ?? 89\\"\\n", argv[0]);
+        wprintf(L"  %s 1234 string "
+                L"password\\n", argv[0]);
+        wprintf(L"  %s 1234 dword "
+                L"1000\\n", argv[0]);
+        return 1;
+    }
+    
+    DWORD pid = wcstoul(argv[1], NULL, 10);
+    const wchar_t* type = argv[2];
+    const wchar_t* search = argv[3];
+    
+    // Enable debug privilege
+    EnableDebugPrivilege();
+    
+    // Open process
+    HANDLE hProc = OpenProcess(
+        PROCESS_QUERY_INFORMATION | 
+        PROCESS_VM_READ,
+        FALSE, pid);
+    
+    if (!hProc) {
+        wprintf(L"[!] OpenProcess failed: %lu\\n",
+                GetLastError());
+        return 1;
+    }
+    
+    wprintf(L"[+] Opened process %lu\\n", pid);
+    wprintf(L"[*] Search type: %s\\n", type);
+    wprintf(L"[*] Pattern: %s\\n\\n", search);
+    
+    DWORD matches = 0;
+    
+    if (wcscmp(type, L"bytes") == 0) {
+        BYTE* pattern;
+        BYTE* mask;
+        SIZE_T size;
+        
+        if (ParseHexPattern(search, 
+                           &pattern, 
+                           &mask, &size)) {
+            matches = ScanProcess(hProc, 
+                                 pattern, 
+                                 mask, size);
+            free(pattern);
+            free(mask);
+        }
+    }
+    else if (wcscmp(type, L"string") == 0) {
+        // Convert to ASCII
+        char str[256];
+        wcstombs_s(NULL, str, 256, 
+                   search, _TRUNCATE);
+        matches = ScanForString(hProc, str);
+    }
+    else if (wcscmp(type, L"wide") == 0) {
+        matches = ScanForWideString(
+            hProc, search);
+    }
+    else if (wcscmp(type, L"dword") == 0) {
+        DWORD value = wcstoul(
+            search, NULL, 10);
+        matches = ScanForDword(hProc, value);
+    }
+    
+    wprintf(L"\\n[+] Found %lu matches\\n", 
+            matches);
+    
+    CloseHandle(hProc);
+    return 0;
+}
+
+// TESTING:
+// 1. Open notepad.exe, type "secret123"
+// 2. Get PID from Task Manager
+// 3. Run: scanner.exe <pid> string secret123
+// 4. Try: scanner.exe <pid> bytes "48 8B"
+// 5. Try: scanner.exe <pid> dword 1000`,
+          language: "c"
+        },
+        {
+          title: "Lab 3: Simple DLL Injector",
+          content: `Build a tool that injects a DLL into a running process using the classic CreateRemoteThread technique. This is the foundation for process hooking, game modding, and security testing.
+
+HOW IT WORKS:
+1. Open target process with full access
+2. Allocate memory in target for DLL path
+3. Write DLL path to allocated memory
+4. Get address of LoadLibraryW in kernel32.dll
+5. Create remote thread calling LoadLibraryW with DLL path
+6. Wait for thread to complete
+7. Clean up allocated memory
+
+KEY CONCEPTS:
+• Kernel32.dll is mapped at the same address in all processes
+• LoadLibraryW address is thus valid across processes
+• CreateRemoteThread executes code in target context
+• DLL_PROCESS_ATTACH runs in target process
+• Thread handle must be waited on and closed
+
+SECURITY CONSIDERATIONS:
+• Requires PROCESS_ALL_ACCESS permissions
+• May be blocked by antivirus (false positive)
+• Protected processes cannot be injected
+• DEP/ASLR doesn't prevent this technique
+• Modern games use anti-cheat to detect this
+
+WHAT YOU'LL LEARN:
+• Remote memory allocation
+• Cross-process function calls
+• DLL loading mechanics
+• Thread synchronization
+• Error handling and cleanup`,
+          code: `// DLL INJECTOR
+// ============
+
+#include <windows.h>
+#include <stdio.h>
+#include <tlhelp32.h>
+
+// Inject DLL into process
+BOOL InjectDLL(DWORD pid, 
+               const wchar_t* dllPath) {
+    
+    wprintf(L"[*] Target PID: %lu\\n", pid);
+    wprintf(L"[*] DLL: %s\\n\\n", dllPath);
+    
+    // Verify DLL exists
+    if (GetFileAttributesW(dllPath) == 
+        INVALID_FILE_ATTRIBUTES) {
+        wprintf(L"[!] DLL not found\\n");
+        return FALSE;
+    }
+    
+    // Open target process
+    wprintf(L"[*] Opening process...\\n");
+    
+    HANDLE hProc = OpenProcess(
+        PROCESS_CREATE_THREAD |
+        PROCESS_QUERY_INFORMATION |
+        PROCESS_VM_OPERATION |
+        PROCESS_VM_WRITE |
+        PROCESS_VM_READ,
+        FALSE, pid);
+    
+    if (!hProc) {
+        wprintf(L"[!] OpenProcess failed: %lu\\n",
+                GetLastError());
+        wprintf(L"[!] Try running as Admin\\n");
+        return FALSE;
+    }
+    
+    wprintf(L"[+] Process opened\\n");
+    
+    // Allocate memory in target
+    SIZE_T pathSize = (wcslen(dllPath) + 1) * 
+                      sizeof(wchar_t);
+    
+    wprintf(L"[*] Allocating memory "
+            L"(%zu bytes)...\\n", pathSize);
+    
+    LPVOID pRemoteBuf = VirtualAllocEx(
+        hProc,
+        NULL,
+        pathSize,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE);
+    
+    if (!pRemoteBuf) {
+        wprintf(L"[!] VirtualAllocEx failed: "
+                L"%lu\\n", GetLastError());
+        CloseHandle(hProc);
+        return FALSE;
+    }
+    
+    wprintf(L"[+] Memory allocated at: "
+            L"0x%p\\n", pRemoteBuf);
+    
+    // Write DLL path to target
+    wprintf(L"[*] Writing DLL path...\\n");
+    
+    SIZE_T written = 0;
+    BOOL result = WriteProcessMemory(
+        hProc,
+        pRemoteBuf,
+        dllPath,
+        pathSize,
+        &written);
+    
+    if (!result || written != pathSize) {
+        wprintf(L"[!] WriteProcessMemory failed: "
+                L"%lu\\n", GetLastError());
+        VirtualFreeEx(hProc, pRemoteBuf, 
+                      0, MEM_RELEASE);
+        CloseHandle(hProc);
+        return FALSE;
+    }
+    
+    wprintf(L"[+] DLL path written "
+            L"(%zu bytes)\\n", written);
+    
+    // Get LoadLibraryW address
+    wprintf(L"[*] Getting LoadLibraryW "
+            L"address...\\n");
+    
+    HMODULE hKernel32 = GetModuleHandleW(
+        L"kernel32.dll");
+    
+    if (!hKernel32) {
+        wprintf(L"[!] GetModuleHandle failed\\n");
+        VirtualFreeEx(hProc, pRemoteBuf, 
+                      0, MEM_RELEASE);
+        CloseHandle(hProc);
+        return FALSE;
+    }
+    
+    LPVOID pLoadLibrary = (LPVOID)
+        GetProcAddress(hKernel32, 
+                       "LoadLibraryW");
+    
+    if (!pLoadLibrary) {
+        wprintf(L"[!] GetProcAddress failed\\n");
+        VirtualFreeEx(hProc, pRemoteBuf, 
+                      0, MEM_RELEASE);
+        CloseHandle(hProc);
+        return FALSE;
+    }
+    
+    wprintf(L"[+] LoadLibraryW at: 0x%p\\n",
+            pLoadLibrary);
+    
+    // Create remote thread
+    wprintf(L"[*] Creating remote thread...\\n");
+    
+    HANDLE hThread = CreateRemoteThread(
+        hProc,
+        NULL,
+        0,
+        (LPTHREAD_START_ROUTINE)pLoadLibrary,
+        pRemoteBuf,
+        0,
+        NULL);
+    
+    if (!hThread) {
+        wprintf(L"[!] CreateRemoteThread failed: "
+                L"%lu\\n", GetLastError());
+        VirtualFreeEx(hProc, pRemoteBuf, 
+                      0, MEM_RELEASE);
+        CloseHandle(hProc);
+        return FALSE;
+    }
+    
+    wprintf(L"[+] Remote thread created\\n");
+    wprintf(L"[*] Waiting for thread...\\n");
+    
+    // Wait for thread to complete
+    WaitForSingleObject(hThread, INFINITE);
+    
+    // Get thread exit code (HMODULE of loaded DLL)
+    DWORD exitCode = 0;
+    GetExitCodeThread(hThread, &exitCode);
+    
+    if (exitCode == 0) {
+        wprintf(L"[!] DLL failed to load\\n");
+        wprintf(L"[!] Check DLL architecture "
+                L"matches process\\n");
+    } else {
+        wprintf(L"[+] DLL loaded! HMODULE: "
+                L"0x%08lX\\n", exitCode);
+    }
+    
+    // Cleanup
+    wprintf(L"[*] Cleaning up...\\n");
+    CloseHandle(hThread);
+    VirtualFreeEx(hProc, pRemoteBuf, 
+                  0, MEM_RELEASE);
+    CloseHandle(hProc);
+    
+    wprintf(L"[+] Injection complete!\\n");
+    return exitCode != 0;
+}
+
+int wmain(int argc, wchar_t* argv[]) {
+    wprintf(L"Simple DLL Injector\\n");
+    wprintf(L"===================\\n\\n");
+    
+    if (argc != 3) {
+        wprintf(L"Usage: %s <pid> <dll_path>\\n",
+                argv[0]);
+        wprintf(L"Example: %s 1234 "
+                L"C:\\\\test.dll\\n", argv[0]);
+        return 1;
+    }
+    
+    DWORD pid = wcstoul(argv[1], NULL, 10);
+    const wchar_t* dllPath = argv[2];
+    
+    // Enable debug privilege
+    if (!EnableDebugPrivilege()) {
+        wprintf(L"[!] Failed to enable "
+                L"SeDebugPrivilege\\n");
+        return 1;
+    }
+    
+    // Convert to absolute path
+    wchar_t fullPath[MAX_PATH];
+    GetFullPathNameW(dllPath, MAX_PATH, 
+                     fullPath, NULL);
+    
+    // Inject DLL
+    if (InjectDLL(pid, fullPath)) {
+        wprintf(L"\\n[+] Success!\\n");
+        return 0;
+    }
+    
+    wprintf(L"\\n[!] Injection failed\\n");
+    return 1;
+}
+
+// SAMPLE DLL CODE
+// ===============
+
+/*
+// Save as test_dll.c
+#include <windows.h>
+#include <stdio.h>
+
+BOOL APIENTRY DllMain(HMODULE hModule,
+                      DWORD reason,
+                      LPVOID reserved) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        // This runs in target process!
+        
+        // Show message box
+        MessageBoxW(NULL,
+            L"DLL Injected Successfully!",
+            L"Injection Test",
+            MB_OK | MB_ICONINFORMATION);
+        
+        // Or create a thread
+        CreateThread(NULL, 0,
+            MyThreadFunc, NULL, 0, NULL);
+        
+        // Or hook APIs
+        // HookFunction(...);
+    }
+    
+    return TRUE;
+}
+
+// Compile DLL:
+// cl /LD test_dll.c /link 
+//    /DEF:exports.def
+
+// exports.def:
+EXPORTS
+    DllMain
+*/
+
+// TESTING:
+// 1. Compile injector: cl injector.c
+// 2. Compile test DLL (see above)
+// 3. Start notepad.exe
+// 4. Get PID from Task Manager
+// 5. Run: injector.exe <pid> test_dll.dll
+// 6. Message box should appear in notepad
+
+// TROUBLESHOOTING:
+// • "Failed to load": Wrong architecture 
+//   (x86 DLL in x64 process)
+// • "Access denied": Run as Administrator
+// • No message box: Check DllMain code
+// • Crashes: Verify DLL exports correctly`,
+          language: "c"
+        },
+        {
+          title: "Next Steps & Advanced Techniques",
+          content: `Congratulations! You've built three fundamental security tools. Here's how to take your skills further:
+
+ADVANCED INJECTION TECHNIQUES:
+• Manual Mapping - Bypass LoadLibrary detection by manually mapping PE
+• Reflective DLL Injection - DLL loads itself without touching disk
+• Process Hollowing - Replace legitimate process with malicious code
+• Thread Hijacking - Inject via existing threads instead of CreateRemoteThread
+• APC Injection - Queue injection via Asynchronous Procedure Calls
+
+EVASION TECHNIQUES:
+• Direct Syscalls - Bypass user-mode hooks by calling NT APIs directly
+• API Unhooking - Remove EDR hooks from ntdll.dll
+• Heaven's Gate - Use x86/x64 transition to evade hooks
+• ETW Patching - Disable Event Tracing for Windows
+• AMSI Bypass - Disable Antimalware Scan Interface
+
+TOOL IMPROVEMENTS:
+• Add GUI using Win32 or Qt
+• Implement pattern signature scanning
+• Support memory patching and modification
+• Add module enumeration and analysis
+• Create persistent injection (survives process restart)
+
+DEBUGGING & ANALYSIS:
+• Learn to use x64dbg for dynamic analysis
+• Master WinDbg for kernel debugging
+• Study PE format in depth
+• Understand IAT/EAT hooking
+• Practice with Cheat Engine for reverse engineering
+
+DEFENSIVE PERSPECTIVE:
+• Learn how EDR detects these techniques
+• Study Windows API hooking
+• Understand kernel callbacks
+• Research PatchGuard and Driver Signature Enforcement
+• Analyze real malware samples (in sandboxed environment!)
+
+RESOURCES:
+• Detecting Windows Malware - Michael Sikorski
+• Windows Internals - Russinovich & Solomon
+• Practical Malware Analysis - Sikorski & Honig
+• OpenSecurityTraining courses
+• MalwareTech blog
+• hasherezade's GitHub
+
+LEGAL REMINDER:
+All techniques taught here are for educational and authorized security testing only. Always get written permission before testing on systems you don't own.
+
+FINAL PROJECT IDEAS:
+1. Build a process monitor that logs all API calls
+2. Create a memory forensics tool for analyzing dumps
+3. Develop a simple rootkit detector
+4. Build a sandbox escape testing framework
+5. Create an anti-debugging detection tool`,
+          code: `// ADVANCED: Manual Map Injection Skeleton
+// =========================================
+// This is a preview of advanced techniques
+
+#include <windows.h>
+#include <stdio.h>
+
+// Function that will run in target process
+DWORD WINAPI LoadLibraryShellcode(
+    LPVOID lpParam) {
+    
+    // This is where manual mapping logic goes
+    // 1. Parse PE headers
+    // 2. Allocate memory for sections
+    // 3. Copy sections to allocated memory
+    // 4. Process relocations
+    // 5. Resolve imports
+    // 6. Call DllMain
+    // 7. Return HMODULE
+    
+    return 0;
+}
+
+// Direct Syscall Example
+// ======================
+// Bypass hooks by calling kernel directly
+
+typedef NTSTATUS (NTAPI *pNtAllocateVirtualMemory)(
+    HANDLE ProcessHandle,
+    PVOID* BaseAddress,
+    ULONG_PTR ZeroBits,
+    PSIZE_T RegionSize,
+    ULONG AllocationType,
+    ULONG Protect
+);
+
+NTSTATUS DirectSyscallAlloc(
+    HANDLE hProcess,
+    PVOID* BaseAddress,
+    SIZE_T* RegionSize) {
+    
+    // Get syscall number for NtAllocateVirtualMemory
+    // This varies by Windows version!
+    WORD syscallNumber = 0x18; // Win10 x64
+    
+    // Call via inline assembly or syscall stub
+    // __asm {
+    //     mov r10, rcx
+    //     mov eax, syscallNumber
+    //     syscall
+    // }
+    
+    return 0; // Placeholder
+}
+
+// API Unhooking Example
+// =====================
+// Remove EDR hooks from ntdll.dll
+
+BOOL UnhookNtdll() {
+    // 1. Map fresh ntdll.dll from disk
+    HANDLE hFile = CreateFileW(
+        L"C:\\\\Windows\\\\System32\\\\ntdll.dll",
+        GENERIC_READ, FILE_SHARE_READ,
+        NULL, OPEN_EXISTING, 0, NULL);
+    
+    if (hFile == INVALID_HANDLE_VALUE)
+        return FALSE;
+    
+    HANDLE hMapping = CreateFileMappingW(
+        hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    CloseHandle(hFile);
+    
+    if (!hMapping) return FALSE;
+    
+    LPVOID pMapping = MapViewOfFile(
+        hMapping, FILE_MAP_READ, 0, 0, 0);
+    CloseHandle(hMapping);
+    
+    if (!pMapping) return FALSE;
+    
+    // 2. Get current ntdll.dll in memory
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    
+    // 3. Parse PE to find .text section
+    PIMAGE_DOS_HEADER pDos = 
+        (PIMAGE_DOS_HEADER)pMapping;
+    PIMAGE_NT_HEADERS pNt = 
+        (PIMAGE_NT_HEADERS)((BYTE*)pMapping + 
+                            pDos->e_lfanew);
+    
+    // 4. Copy clean .text over hooked version
+    // (Implementation left as exercise)
+    
+    UnmapViewOfFile(pMapping);
+    
+    wprintf(L"[+] Ntdll.dll unhooked\\n");
+    return TRUE;
+}
+
+// FURTHER STUDY:
+// ==============
+// 1. Complete the manual map implementation
+// 2. Research syscall number retrieval
+// 3. Study EDR bypass techniques
+// 4. Learn kernel driver development
+// 5. Analyze real-world malware
+
+// CAUTION: These techniques can be detected
+// by modern EDR solutions. Study detection
+// methods alongside evasion techniques!`,
+          language: "c"
+        }
+      ]
     }
   };
 
