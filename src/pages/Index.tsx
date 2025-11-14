@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Terminal, Shield, Code2, Cpu, Lock, Zap } from "lucide-react";
+import { Terminal, Shield, Code2, Cpu, Lock, Zap, Wrench } from "lucide-react";
 import LessonViewer from "@/components/LessonViewer";
 import CodeEditor from "@/components/CodeEditor";
 import TerminalConsole from "@/components/TerminalConsole";
@@ -112,6 +112,20 @@ const Index = () => {
         "Encoder/Decoder Stubs",
         "Syscall Shellcode",
         "Payload Encryption",
+      ]
+    },
+    {
+      id: "labs",
+      title: "Practical Labs",
+      icon: Wrench,
+      description: "Build real security tools step-by-step: process dumper, memory scanner, and DLL injector",
+      difficulty: "Intermediate",
+      topics: [
+        "Process Memory Dumper",
+        "Memory Pattern Scanner",
+        "DLL Injector (CreateRemoteThread)",
+        "Step-by-Step Guided Projects",
+        "Complete Working Code",
       ]
     }
   ];
