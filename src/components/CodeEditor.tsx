@@ -168,21 +168,33 @@ const CodeEditor = ({ moduleId, onExecute }: CodeEditorProps) => {
   };
 
   return (
-    <Card className="p-0 bg-card border-border overflow-hidden">
-      <div className="bg-secondary p-4 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Code2 className="h-5 w-5 text-primary" />
+    <Card className="p-0 bg-card border-border overflow-hidden shadow-lg hover:shadow-glow-md transition-all duration-500 animate-fade-in">
+      <div className="bg-gradient-to-r from-secondary to-secondary/80 p-4 border-b border-border/50 flex items-center justify-between backdrop-blur">
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 rounded-md bg-primary/20">
+            <Code2 className="h-5 w-5 text-primary" />
+          </div>
           <h3 className="font-bold text-foreground">Code Editor</h3>
-          <Badge variant="outline" className="text-xs">
+          <Badge variant="outline" className="text-xs border-primary/50 bg-primary/10 text-primary">
             {moduleId.includes("pinvoke") ? "C#" : moduleId.includes("shellcode") ? "ASM" : "C"}
           </Badge>
         </div>
         
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={handleCopy}>
+          <Button 
+            size="sm" 
+            variant="ghost" 
+            onClick={handleCopy}
+            className="hover:bg-primary/20 hover:text-primary transition-all duration-300"
+          >
             {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           </Button>
-          <Button size="sm" variant="ghost" onClick={handleSave}>
+          <Button 
+            size="sm" 
+            variant="ghost" 
+            onClick={handleSave}
+            className="hover:bg-primary/20 hover:text-primary transition-all duration-300"
+          >
             <Save className="h-4 w-4" />
           </Button>
         </div>
@@ -192,12 +204,15 @@ const CodeEditor = ({ moduleId, onExecute }: CodeEditorProps) => {
         <Textarea
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          className="min-h-[300px] font-mono text-sm bg-code-bg border-0 text-primary resize-none focus-visible:ring-0 rounded-none"
+          className="min-h-[300px] font-mono text-sm bg-code-bg border-0 text-primary/90 resize-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-none leading-relaxed"
           placeholder="Write your code here..."
         />
         
         <div className="absolute bottom-4 right-4">
-          <Button onClick={handleRun} className="gap-2">
+          <Button 
+            onClick={handleRun} 
+            className="gap-2 shadow-lg hover:shadow-glow-md transition-all duration-300 hover:scale-105"
+          >
             <Play className="h-4 w-4" />
             Run Code
           </Button>

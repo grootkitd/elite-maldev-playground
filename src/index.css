@@ -17,8 +17,9 @@ All colors MUST be HSL.
     --popover: 220 13% 12%;
     --popover-foreground: 120 100% 85%;
 
-    --primary: 142 76% 36%;
+    --primary: 142 76% 42%;
     --primary-foreground: 220 13% 9%;
+    --primary-glow: 142 86% 55%;
 
     --secondary: 220 13% 16%;
     --secondary-foreground: 120 100% 85%;
@@ -34,11 +35,11 @@ All colors MUST be HSL.
 
     --border: 220 13% 20%;
     --input: 220 13% 16%;
-    --ring: 142 76% 36%;
+    --ring: 142 76% 42%;
 
-    --radius: 0.3rem;
+    --radius: 0.5rem;
 
-    --success: 142 76% 36%;
+    --success: 142 76% 42%;
     --warning: 45 93% 47%;
     --info: 199 89% 48%;
     
@@ -46,19 +47,19 @@ All colors MUST be HSL.
     --terminal-bg: 220 13% 6%;
     
     /* Learning content colors */
-    --tip-bg: 199 89% 15%;
+    --tip-bg: 199 89% 12%;
     --tip-border: 199 89% 48%;
     --tip-text: 199 89% 85%;
     
-    --warning-bg: 45 93% 15%;
+    --warning-bg: 45 93% 12%;
     --warning-border: 45 93% 47%;
     --warning-text: 45 93% 85%;
     
-    --example-bg: 142 50% 15%;
-    --example-border: 142 76% 36%;
+    --example-bg: 142 50% 12%;
+    --example-border: 142 76% 42%;
     --example-text: 142 76% 85%;
     
-    --concept-bg: 266 50% 15%;
+    --concept-bg: 266 50% 12%;
     --concept-border: 266 70% 50%;
     --concept-text: 266 70% 85%;
   }
@@ -73,8 +74,9 @@ All colors MUST be HSL.
     --popover: 220 13% 12%;
     --popover-foreground: 120 100% 85%;
 
-    --primary: 142 76% 36%;
+    --primary: 142 76% 42%;
     --primary-foreground: 220 13% 9%;
+    --primary-glow: 142 86% 55%;
 
     --secondary: 220 13% 16%;
     --secondary-foreground: 120 100% 85%;
@@ -90,9 +92,9 @@ All colors MUST be HSL.
 
     --border: 220 13% 20%;
     --input: 220 13% 16%;
-    --ring: 142 76% 36%;
+    --ring: 142 76% 42%;
     
-    --success: 142 76% 36%;
+    --success: 142 76% 42%;
     --warning: 45 93% 47%;
     --info: 199 89% 48%;
     
@@ -100,19 +102,19 @@ All colors MUST be HSL.
     --terminal-bg: 220 13% 6%;
     
     /* Learning content colors */
-    --tip-bg: 199 89% 15%;
+    --tip-bg: 199 89% 12%;
     --tip-border: 199 89% 48%;
     --tip-text: 199 89% 85%;
     
-    --warning-bg: 45 93% 15%;
+    --warning-bg: 45 93% 12%;
     --warning-border: 45 93% 47%;
     --warning-text: 45 93% 85%;
     
-    --example-bg: 142 50% 15%;
-    --example-border: 142 76% 36%;
+    --example-bg: 142 50% 12%;
+    --example-border: 142 76% 42%;
     --example-text: 142 76% 85%;
     
-    --concept-bg: 266 50% 15%;
+    --concept-bg: 266 50% 12%;
     --concept-border: 266 70% 50%;
     --concept-text: 266 70% 85%;
   }
