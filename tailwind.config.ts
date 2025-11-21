@@ -56,6 +56,26 @@ export default {
         terminal: {
           bg: "hsl(var(--terminal-bg))",
         },
+        tip: {
+          bg: "hsl(var(--tip-bg))",
+          border: "hsl(var(--tip-border))",
+          text: "hsl(var(--tip-text))",
+        },
+        warning: {
+          bg: "hsl(var(--warning-bg))",
+          border: "hsl(var(--warning-border))",
+          text: "hsl(var(--warning-text))",
+        },
+        example: {
+          bg: "hsl(var(--example-bg))",
+          border: "hsl(var(--example-border))",
+          text: "hsl(var(--example-text))",
+        },
+        concept: {
+          bg: "hsl(var(--concept-bg))",
+          border: "hsl(var(--concept-border))",
+          text: "hsl(var(--concept-text))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

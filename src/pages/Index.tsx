@@ -135,19 +135,27 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto px-6 py-4">
+      <header className="border-b border-border bg-gradient-to-r from-card to-card/50 backdrop-blur">
+        <div className="container mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Shield className="h-8 w-8 text-primary" />
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-xl bg-primary/20 backdrop-blur">
+                <Shield className="h-8 w-8 text-primary" />
+              </div>
               <div>
-                <h1 className="text-2xl font-bold text-foreground">REDTEAM-DEV</h1>
-                <p className="text-sm text-muted-foreground">Elite Systems Programming Academy</p>
+                <h1 className="text-3xl font-bold text-foreground bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                  REDTEAM-DEV
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Learn Windows Systems Programming • Step by Step • Real Examples
+                </p>
               </div>
             </div>
-            <Badge variant="outline" className="text-primary border-primary">
-              Red Team Certified
-            </Badge>
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="text-success border-success/50 bg-success/10">
+                🎓 Learning Mode
+              </Badge>
+            </div>
           </div>
         </div>
       </header>
@@ -156,17 +164,20 @@ const Index = () => {
       <div className="container mx-auto px-6 py-8">
         <Tabs value={currentModule} onValueChange={setCurrentModule} className="space-y-6">
           {/* Module Navigation */}
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 gap-2 bg-card p-2 h-auto">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 gap-3 bg-card/50 p-3 h-auto rounded-xl backdrop-blur border border-border/50">
             {modules.map((module) => {
               const Icon = module.icon;
+              const isActive = currentModule === module.id;
               return (
                 <TabsTrigger
                   key={module.id}
                   value={module.id}
-                  className="flex flex-col items-center gap-2 p-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                  className="flex flex-col items-center gap-2 p-4 rounded-lg transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg hover:bg-muted/50"
                 >
-                  <Icon className="h-5 w-5" />
-                  <span className="text-xs text-center leading-tight">{module.title}</span>
+                  <div className={`p-2 rounded-lg transition-colors ${isActive ? 'bg-primary-foreground/20' : 'bg-primary/10'}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <span className="text-xs text-center leading-tight font-medium">{module.title}</span>
                 </TabsTrigger>
               );
             })}
@@ -176,25 +187,30 @@ const Index = () => {
           {modules.map((module) => (
             <TabsContent key={module.id} value={module.id} className="space-y-6">
               {/* Module Header */}
-              <Card className="p-6 bg-card border-border">
+              <Card className="p-8 bg-gradient-to-br from-card via-card to-card/50 border-border/50 backdrop-blur shadow-xl">
                 <div className="flex items-start justify-between">
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-bold text-foreground">{module.title}</h2>
-                    <p className="text-muted-foreground">{module.description}</p>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-4xl font-bold text-foreground">{module.title}</h2>
+                    </div>
+                    <p className="text-muted-foreground text-lg">{module.description}</p>
                   </div>
-                  <Badge variant={module.difficulty === "Expert" ? "destructive" : "default"}>
+                  <Badge 
+                    variant={module.difficulty === "Expert" ? "destructive" : module.difficulty === "Advanced" ? "default" : "secondary"}
+                    className="text-sm px-3 py-1"
+                  >
                     {module.difficulty}
                   </Badge>
                 </div>
                 
                 {/* Topics List */}
-                <div className="mt-6 grid gap-2">
-                  <h3 className="text-sm font-semibold text-muted-foreground">COVERED TOPICS:</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="mt-8 p-6 rounded-lg bg-muted/30 border border-border/30">
+                  <h3 className="text-sm font-bold text-primary mb-4 uppercase tracking-wider">What You'll Learn</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {module.topics.map((topic, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-sm">
-                        <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span className="text-foreground">{topic}</span>
+                      <div key={idx} className="flex items-center gap-3 text-sm group">
+                        <div className="h-2 w-2 rounded-full bg-primary group-hover:scale-125 transition-transform" />
+                        <span className="text-foreground group-hover:text-primary transition-colors">{topic}</span>
                       </div>
                     ))}
                   </div>

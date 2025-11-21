@@ -44,6 +44,23 @@ All colors MUST be HSL.
     
     --code-bg: 220 13% 8%;
     --terminal-bg: 220 13% 6%;
+    
+    /* Learning content colors */
+    --tip-bg: 199 89% 15%;
+    --tip-border: 199 89% 48%;
+    --tip-text: 199 89% 85%;
+    
+    --warning-bg: 45 93% 15%;
+    --warning-border: 45 93% 47%;
+    --warning-text: 45 93% 85%;
+    
+    --example-bg: 142 50% 15%;
+    --example-border: 142 76% 36%;
+    --example-text: 142 76% 85%;
+    
+    --concept-bg: 266 50% 15%;
+    --concept-border: 266 70% 50%;
+    --concept-text: 266 70% 85%;
   }
 
   .dark {
@@ -81,6 +98,23 @@ All colors MUST be HSL.
     
     --code-bg: 220 13% 8%;
     --terminal-bg: 220 13% 6%;
+    
+    /* Learning content colors */
+    --tip-bg: 199 89% 15%;
+    --tip-border: 199 89% 48%;
+    --tip-text: 199 89% 85%;
+    
+    --warning-bg: 45 93% 15%;
+    --warning-border: 45 93% 47%;
+    --warning-text: 45 93% 85%;
+    
+    --example-bg: 142 50% 15%;
+    --example-border: 142 76% 36%;
+    --example-text: 142 76% 85%;
+    
+    --concept-bg: 266 50% 15%;
+    --concept-border: 266 70% 50%;
+    --concept-text: 266 70% 85%;
   }
 }
 
