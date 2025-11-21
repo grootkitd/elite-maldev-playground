@@ -164,7 +164,7 @@ const Index = () => {
       <div className="container mx-auto px-6 py-8">
         <Tabs value={currentModule} onValueChange={setCurrentModule} className="space-y-6">
           {/* Module Navigation */}
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 gap-3 bg-card/50 p-3 h-auto rounded-xl backdrop-blur border border-border/50">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 gap-3 bg-card/50 p-3 h-auto rounded-xl backdrop-blur border border-border/50 shadow-lg">
             {modules.map((module) => {
               const Icon = module.icon;
               const isActive = currentModule === module.id;
@@ -172,10 +172,18 @@ const Index = () => {
                 <TabsTrigger
                   key={module.id}
                   value={module.id}
-                  className="flex flex-col items-center gap-2 p-4 rounded-lg transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg hover:bg-muted/50"
+                  className={`group flex flex-col items-center gap-2 p-4 rounded-lg transition-all duration-300 hover:scale-105 ${
+                    isActive 
+                      ? 'bg-primary text-primary-foreground shadow-glow-md' 
+                      : 'hover:bg-muted/70 hover:shadow-glow-sm'
+                  }`}
                 >
-                  <div className={`p-2 rounded-lg transition-colors ${isActive ? 'bg-primary-foreground/20' : 'bg-primary/10'}`}>
-                    <Icon className="h-5 w-5" />
+                  <div className={`p-2 rounded-lg transition-all duration-300 ${
+                    isActive 
+                      ? 'bg-primary-foreground/20 shadow-inner' 
+                      : 'bg-primary/10 group-hover:bg-primary/20'
+                  }`}>
+                    <Icon className={`h-5 w-5 transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
                   </div>
                   <span className="text-xs text-center leading-tight font-medium">{module.title}</span>
                 </TabsTrigger>
@@ -187,30 +195,35 @@ const Index = () => {
           {modules.map((module) => (
             <TabsContent key={module.id} value={module.id} className="space-y-6">
               {/* Module Header */}
-              <Card className="p-8 bg-gradient-to-br from-card via-card to-card/50 border-border/50 backdrop-blur shadow-xl">
+              <Card className="p-8 bg-gradient-to-br from-card via-card to-card/50 border-border/50 backdrop-blur shadow-xl hover:shadow-glow-md transition-all duration-500 animate-slide-up">
                 <div className="flex items-start justify-between">
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <h2 className="text-4xl font-bold text-foreground">{module.title}</h2>
+                      <h2 className="text-4xl font-bold bg-gradient-to-r from-primary via-primary-glow to-primary bg-clip-text text-transparent">
+                        {module.title}
+                      </h2>
                     </div>
-                    <p className="text-muted-foreground text-lg">{module.description}</p>
+                    <p className="text-muted-foreground text-lg leading-relaxed">{module.description}</p>
                   </div>
                   <Badge 
                     variant={module.difficulty === "Expert" ? "destructive" : module.difficulty === "Advanced" ? "default" : "secondary"}
-                    className="text-sm px-3 py-1"
+                    className="text-sm px-4 py-1.5 shadow-sm"
                   >
                     {module.difficulty}
                   </Badge>
                 </div>
                 
                 {/* Topics List */}
-                <div className="mt-8 p-6 rounded-lg bg-muted/30 border border-border/30">
-                  <h3 className="text-sm font-bold text-primary mb-4 uppercase tracking-wider">What You'll Learn</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="mt-8 p-6 rounded-xl bg-gradient-to-br from-muted/40 to-muted/20 border border-border/40 backdrop-blur-sm">
+                  <h3 className="text-sm font-bold text-primary mb-5 uppercase tracking-wider flex items-center gap-2">
+                    <div className="h-1 w-8 bg-primary rounded-full" />
+                    What You'll Learn
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {module.topics.map((topic, idx) => (
-                      <div key={idx} className="flex items-center gap-3 text-sm group">
-                        <div className="h-2 w-2 rounded-full bg-primary group-hover:scale-125 transition-transform" />
-                        <span className="text-foreground group-hover:text-primary transition-colors">{topic}</span>
+                      <div key={idx} className="flex items-center gap-3 text-sm group cursor-default">
+                        <div className="h-2 w-2 rounded-full bg-primary shadow-glow-sm group-hover:scale-150 group-hover:shadow-glow-md transition-all duration-300" />
+                        <span className="text-foreground group-hover:text-primary group-hover:translate-x-1 transition-all duration-300">{topic}</span>
                       </div>
                     ))}
                   </div>
