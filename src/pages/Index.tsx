@@ -2,10 +2,11 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Terminal, Shield, Code2, Cpu, Lock, Zap, Wrench } from "lucide-react";
+import { Terminal, Shield, Code2, Cpu, Lock, Zap, Wrench, BookOpen, Trophy } from "lucide-react";
 import LessonViewer from "@/components/LessonViewer";
 import CodeEditor from "@/components/CodeEditor";
 import TerminalConsole from "@/components/TerminalConsole";
+import ChallengeSection from "@/components/ChallengeSection";
 
 const Index = () => {
   const [currentModule, setCurrentModule] = useState("windows-internals");
@@ -230,29 +231,69 @@ const Index = () => {
                 </div>
               </Card>
 
-              {/* Learning Interface */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Lesson Content */}
-                <LessonViewer moduleId={module.id} />
+              {/* Learning Interface with Tabs */}
+              <Tabs defaultValue="lessons" className="space-y-4">
+                <TabsList className="bg-card/50 border border-border/50 p-1">
+                  <TabsTrigger value="lessons" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                    <BookOpen className="h-4 w-4" />
+                    Lessons
+                  </TabsTrigger>
+                  <TabsTrigger value="challenges" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                    <Trophy className="h-4 w-4" />
+                    Challenges
+                  </TabsTrigger>
+                </TabsList>
 
-                {/* Code Editor */}
-                <div className="space-y-4">
-                  <CodeEditor 
-                    moduleId={module.id}
-                    onExecute={(output) => {
-                      setConsoleOutput(prev => [...prev, ...output]);
-                    }}
-                  />
-                  
-                  {/* Terminal */}
-                  <TerminalConsole 
-                    output={consoleOutput}
-                    onCommand={(cmd) => {
-                      setConsoleOutput(prev => [...prev, `> ${cmd}`, "Command executed successfully"]);
-                    }}
-                  />
-                </div>
-              </div>
+                <TabsContent value="lessons" className="mt-0">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Lesson Content */}
+                    <LessonViewer moduleId={module.id} />
+
+                    {/* Code Editor */}
+                    <div className="space-y-4">
+                      <CodeEditor 
+                        moduleId={module.id}
+                        onExecute={(output) => {
+                          setConsoleOutput(prev => [...prev, ...output]);
+                        }}
+                      />
+                      
+                      {/* Terminal */}
+                      <TerminalConsole 
+                        output={consoleOutput}
+                        onCommand={(cmd) => {
+                          setConsoleOutput(prev => [...prev, `> ${cmd}`, "Command executed successfully"]);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="challenges" className="mt-0">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Challenges */}
+                    <ChallengeSection moduleId={module.id} />
+
+                    {/* Code Editor for Challenges */}
+                    <div className="space-y-4">
+                      <CodeEditor 
+                        moduleId={module.id}
+                        onExecute={(output) => {
+                          setConsoleOutput(prev => [...prev, ...output]);
+                        }}
+                      />
+                      
+                      {/* Terminal */}
+                      <TerminalConsole 
+                        output={consoleOutput}
+                        onCommand={(cmd) => {
+                          setConsoleOutput(prev => [...prev, `> ${cmd}`, "Command executed successfully"]);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </TabsContent>
           ))}
         </Tabs>
