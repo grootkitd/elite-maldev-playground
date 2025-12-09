@@ -953,6 +953,399 @@ int main() {
       ],
       explanation: "This is the foundation of process monitoring tools. The parent PID (PPID) is useful for understanding process relationships - for example, cmd.exe spawned by explorer.exe vs spawned by malware."
     }
+  ],
+  "active-directory": [
+    {
+      id: "ad1",
+      title: "Enumerate Domain Users",
+      difficulty: "easy",
+      points: 20,
+      description: "Enumeration is the first step in any AD attack. Learn to list all domain users with PowerShell.",
+      task: "Write a PowerShell script that enumerates all domain users and displays their username, description, and last logon date.",
+      hints: [
+        "Use the ActiveDirectory module or .NET DirectoryServices",
+        "Get-ADUser is the simplest approach if the module is available",
+        "Filter for enabled accounts to reduce noise"
+      ],
+      starterCode: `# PowerShell AD User Enumeration
+# TODO: Import module or use .NET
+
+# TODO: Get all domain users
+# $users = ???
+
+# TODO: Display relevant information
+# foreach ($user in $users) {
+#     # Show: Username, Description, LastLogon
+# }`,
+      solution: `# PowerShell AD User Enumeration
+
+# Method 1: Using ActiveDirectory Module (if available)
+Import-Module ActiveDirectory
+
+$users = Get-ADUser -Filter * -Properties Description,LastLogonDate,Enabled | 
+    Where-Object { $_.Enabled -eq $true }
+
+Write-Host "=== Domain Users ===" -ForegroundColor Green
+Write-Host ""
+
+foreach ($user in $users) {
+    Write-Host "Username: $($user.SamAccountName)" -ForegroundColor Cyan
+    Write-Host "  Description: $($user.Description)"
+    Write-Host "  Last Logon: $($user.LastLogonDate)"
+    Write-Host ""
+}
+
+Write-Host "Total Users: $($users.Count)" -ForegroundColor Yellow
+
+# Method 2: Using .NET (no module needed)
+# $searcher = [adsisearcher]"(&(objectClass=user)(objectCategory=person))"
+# $searcher.PageSize = 1000
+# $results = $searcher.FindAll()
+# foreach ($result in $results) {
+#     $result.Properties["samaccountname"]
+# }`,
+      testCases: [
+        "✓ Imports ActiveDirectory module or uses .NET",
+        "✓ Retrieves user properties correctly",
+        "✓ Displays username, description, and last logon"
+      ],
+      explanation: "User enumeration reveals attack targets. Look for service accounts (often have SPNs for Kerberoasting), privileged users, and accounts with descriptions containing passwords (yes, this happens!)."
+    },
+    {
+      id: "ad2",
+      title: "Find Kerberoastable Accounts",
+      difficulty: "medium",
+      points: 35,
+      description: "Service accounts with SPNs can be Kerberoasted. Learn to identify these high-value targets.",
+      task: "Write a script to find all user accounts with SPNs set (excluding computer accounts).",
+      hints: [
+        "User accounts with servicePrincipalName attribute set are Kerberoastable",
+        "Filter out computer accounts - they have SPNs too but aren't useful here",
+        "Check if the account is enabled and not a built-in account"
+      ],
+      starterCode: `# Find Kerberoastable Users
+# Accounts with SPNs that aren't computer accounts
+
+# TODO: Query for users with SPNs
+# Filter: User object, has SPN, enabled
+
+# TODO: Display results
+# Show: Username, SPN, Password Last Set`,
+      solution: `# Find Kerberoastable Users
+Import-Module ActiveDirectory
+
+Write-Host "=== Kerberoastable Accounts ===" -ForegroundColor Red
+Write-Host "Users with SPNs (excluding computers)" -ForegroundColor Gray
+Write-Host ""
+
+# Find users (not computers) with SPNs set
+$kerbUsers = Get-ADUser -Filter {ServicePrincipalName -like "*"} -Properties ServicePrincipalName,PasswordLastSet,Enabled,Description |
+    Where-Object { $_.Enabled -eq $true }
+
+foreach ($user in $kerbUsers) {
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+    Write-Host "User: $($user.SamAccountName)" -ForegroundColor Yellow
+    Write-Host "  Description: $($user.Description)"
+    Write-Host "  Password Last Set: $($user.PasswordLastSet)"
+    Write-Host "  SPNs:" -ForegroundColor Cyan
+    foreach ($spn in $user.ServicePrincipalName) {
+        Write-Host "    - $spn"
+    }
+}
+
+Write-Host ""
+Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+Write-Host "Found $($kerbUsers.Count) Kerberoastable accounts" -ForegroundColor Green
+Write-Host ""
+Write-Host "[!] Next step: Request TGS tickets for these SPNs and crack offline" -ForegroundColor Magenta`,
+      testCases: [
+        "✓ Filters for user objects only",
+        "✓ Finds accounts with ServicePrincipalName set",
+        "✓ Shows password age (old = weaker passwords)"
+      ],
+      explanation: "Kerberoasting targets service accounts because: 1) They often have weak passwords, 2) You can request TGS tickets for any SPN as any authenticated user, 3) TGS tickets are encrypted with the service account's hash, which you can crack offline."
+    },
+    {
+      id: "ad3",
+      title: "Check for ASREPRoastable Users",
+      difficulty: "medium",
+      points: 35,
+      description: "Accounts without Kerberos pre-authentication are vulnerable to offline password attacks.",
+      task: "Find all accounts with 'Do not require Kerberos preauthentication' enabled.",
+      hints: [
+        "The UserAccountControl attribute contains the DONT_REQUIRE_PREAUTH flag",
+        "The flag value is 0x400000 (4194304 decimal)",
+        "You can use Get-ADUser with a filter on UserAccountControl"
+      ],
+      starterCode: `# Find ASREPRoastable Users
+# Accounts with "Do not require Kerberos preauthentication" enabled
+
+# UserAccountControl flag: DONT_REQUIRE_PREAUTH = 0x400000
+
+# TODO: Find users with this flag set
+
+# TODO: Display vulnerable accounts`,
+      solution: `# Find ASREPRoastable Users
+Import-Module ActiveDirectory
+
+Write-Host "=== ASREPRoastable Accounts ===" -ForegroundColor Red
+Write-Host "Accounts with Kerberos pre-auth disabled" -ForegroundColor Gray
+Write-Host ""
+
+# DONT_REQUIRE_PREAUTH = 0x400000 = 4194304
+$asrepUsers = Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true} -Properties DoesNotRequirePreAuth,PasswordLastSet,Description,Enabled |
+    Where-Object { $_.Enabled -eq $true }
+
+if ($asrepUsers.Count -eq 0) {
+    Write-Host "[+] No vulnerable accounts found!" -ForegroundColor Green
+} else {
+    foreach ($user in $asrepUsers) {
+        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+        Write-Host "[VULNERABLE] $($user.SamAccountName)" -ForegroundColor Yellow
+        Write-Host "  Description: $($user.Description)"
+        Write-Host "  Password Last Set: $($user.PasswordLastSet)"
+        Write-Host "  DN: $($user.DistinguishedName)"
+    }
+    
+    Write-Host ""
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+    Write-Host "Found $($asrepUsers.Count) ASREPRoastable accounts!" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "[!] Attack: Request AS-REP without pre-auth and crack offline" -ForegroundColor Magenta
+    Write-Host "[!] Tool: GetNPUsers.py or Rubeus asreproast" -ForegroundColor Magenta
+}`,
+      testCases: [
+        "✓ Checks DoesNotRequirePreAuth attribute",
+        "✓ Filters for enabled accounts",
+        "✓ Displays vulnerable accounts with details"
+      ],
+      explanation: "Without pre-authentication, anyone can request an AS-REP for these accounts. The AS-REP contains data encrypted with the user's hash, which can be cracked offline. This misconfiguration is rare but devastating when found."
+    },
+    {
+      id: "ad4",
+      title: "Find Privileged Group Members",
+      difficulty: "easy",
+      points: 25,
+      description: "High-privilege groups are your targets. Learn to enumerate them recursively.",
+      task: "Enumerate all members of Domain Admins, Enterprise Admins, and Administrators groups (including nested group members).",
+      hints: [
+        "Use -Recursive parameter to get nested group members",
+        "Some members might be in nested groups",
+        "Compare members across groups to find overlap"
+      ],
+      starterCode: `# Enumerate Privileged Groups
+# Target: Domain Admins, Enterprise Admins, Administrators
+
+$targetGroups = @(
+    "Domain Admins",
+    "Enterprise Admins", 
+    "Administrators"
+)
+
+# TODO: For each group, get all members recursively
+# TODO: Display the results`,
+      solution: `# Enumerate Privileged Groups
+Import-Module ActiveDirectory
+
+$targetGroups = @(
+    "Domain Admins",
+    "Enterprise Admins",
+    "Administrators",
+    "Schema Admins",
+    "Account Operators",
+    "Backup Operators"
+)
+
+Write-Host "=== Privileged Group Enumeration ===" -ForegroundColor Red
+Write-Host ""
+
+$allPrivUsers = @{}
+
+foreach ($group in $targetGroups) {
+    try {
+        $members = Get-ADGroupMember -Identity $group -Recursive -ErrorAction SilentlyContinue
+        
+        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+        Write-Host "Group: $group" -ForegroundColor Yellow
+        Write-Host "Members: $($members.Count)" -ForegroundColor Cyan
+        
+        foreach ($member in $members) {
+            $type = switch ($member.objectClass) {
+                "user" { "[U]" }
+                "computer" { "[C]" }
+                "group" { "[G]" }
+                default { "[?]" }
+            }
+            Write-Host "  $type $($member.SamAccountName)"
+            
+            # Track users in multiple groups
+            if ($member.objectClass -eq "user") {
+                if (-not $allPrivUsers.ContainsKey($member.SamAccountName)) {
+                    $allPrivUsers[$member.SamAccountName] = @()
+                }
+                $allPrivUsers[$member.SamAccountName] += $group
+            }
+        }
+    } catch {
+        Write-Host "Group: $group - Not found or access denied" -ForegroundColor Gray
+    }
+}
+
+Write-Host ""
+Write-Host "=== Users in Multiple Privileged Groups ===" -ForegroundColor Magenta
+$multiGroup = $allPrivUsers.GetEnumerator() | Where-Object { $_.Value.Count -gt 1 }
+foreach ($user in $multiGroup) {
+    Write-Host "$($user.Key): $($user.Value -join ', ')" -ForegroundColor Yellow
+}`,
+      testCases: [
+        "✓ Enumerates multiple privileged groups",
+        "✓ Uses recursive enumeration for nested groups",
+        "✓ Identifies users in multiple groups"
+      ],
+      explanation: "Privileged group enumeration is reconnaissance 101. Users in multiple privileged groups are high-value targets. Computer accounts in these groups might indicate delegation issues."
+    },
+    {
+      id: "ad5",
+      title: "Detect Unconstrained Delegation",
+      difficulty: "hard",
+      points: 50,
+      description: "Unconstrained delegation allows extracting TGTs from connecting users. A powerful attack vector!",
+      task: "Find all computers and users with unconstrained delegation enabled (excluding DCs).",
+      hints: [
+        "UserAccountControl flag TRUSTED_FOR_DELEGATION = 0x80000 (524288)",
+        "Domain Controllers have this by default - filter them out",
+        "Check both computer and user objects"
+      ],
+      starterCode: `# Find Unconstrained Delegation
+# Computers/users that can impersonate ANY user
+
+# TODO: Find computers with unconstrained delegation
+# Exclude Domain Controllers
+
+# TODO: Find users with unconstrained delegation
+
+# TODO: Explain the risk`,
+      solution: `# Find Unconstrained Delegation
+Import-Module ActiveDirectory
+
+Write-Host "=== Unconstrained Delegation Detection ===" -ForegroundColor Red
+Write-Host "These hosts can capture TGTs from any connecting user!" -ForegroundColor Gray
+Write-Host ""
+
+# Get Domain Controllers (they have this by default, not interesting)
+$dcs = (Get-ADDomainController -Filter *).Name
+
+# Find computers with unconstrained delegation
+Write-Host "━━━ Computers with Unconstrained Delegation ━━━" -ForegroundColor Yellow
+$computers = Get-ADComputer -Filter {TrustedForDelegation -eq $true} -Properties TrustedForDelegation,OperatingSystem,Description
+
+foreach ($comp in $computers) {
+    $isDC = $dcs -contains $comp.Name
+    if (-not $isDC) {
+        Write-Host "[VULNERABLE] $($comp.Name)" -ForegroundColor Red
+        Write-Host "  OS: $($comp.OperatingSystem)"
+        Write-Host "  Description: $($comp.Description)"
+        Write-Host ""
+    }
+}
+
+# Find users with unconstrained delegation (rare but dangerous)
+Write-Host "━━━ Users with Unconstrained Delegation ━━━" -ForegroundColor Yellow
+$users = Get-ADUser -Filter {TrustedForDelegation -eq $true} -Properties TrustedForDelegation,Description
+
+foreach ($user in $users) {
+    Write-Host "[CRITICAL] $($user.SamAccountName)" -ForegroundColor Red
+    Write-Host "  Description: $($user.Description)"
+}
+
+Write-Host ""
+Write-Host "=== Attack Path ===" -ForegroundColor Magenta
+Write-Host "1. Compromise a host with unconstrained delegation"
+Write-Host "2. Use SpoolSample/PrinterBug to coerce DC authentication"
+Write-Host "3. Extract DC's TGT from memory with Rubeus monitor"
+Write-Host "4. Use DC's TGT to DCSync and dump all hashes"`,
+      testCases: [
+        "✓ Finds computers with TrustedForDelegation",
+        "✓ Filters out Domain Controllers",
+        "✓ Checks both users and computers"
+      ],
+      explanation: "Unconstrained delegation means the host stores the connecting user's TGT. If you compromise this host and coerce a DC to authenticate (PrinterBug), you get the DC's TGT. With a DC's TGT, you can DCSync and extract all domain credentials!"
+    },
+    {
+      id: "ad6",
+      title: "BloodHound Data Collection",
+      difficulty: "medium",
+      points: 40,
+      description: "BloodHound visualizes AD attack paths. Learn to collect the data it needs.",
+      task: "Write a script that collects basic BloodHound-style data: users, groups, group memberships, and admin relationships.",
+      hints: [
+        "SharpHound is the official collector, but understanding the data helps",
+        "You need: Users, Groups, Computers, Sessions, ACLs",
+        "Export to JSON format for BloodHound import"
+      ],
+      starterCode: `# Manual BloodHound Data Collection
+# Collect AD data for attack path analysis
+
+# TODO: Collect all users with properties
+# TODO: Collect all groups with memberships
+# TODO: Collect all computers
+# TODO: Collect local admin relationships (if possible)
+# TODO: Export as JSON`,
+      solution: `# Manual BloodHound Data Collection
+Import-Module ActiveDirectory
+
+$outputPath = "C:\\temp\\bloodhound_data"
+New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
+
+Write-Host "=== BloodHound Data Collection ===" -ForegroundColor Cyan
+Write-Host ""
+
+# Collect Users
+Write-Host "[*] Collecting users..." -ForegroundColor Yellow
+$users = Get-ADUser -Filter * -Properties SamAccountName,Enabled,AdminCount,ServicePrincipalName,PrimaryGroup,MemberOf,Description | 
+    Select-Object @{N='name';E={$_.SamAccountName}},
+                  @{N='enabled';E={$_.Enabled}},
+                  @{N='highvalue';E={$_.AdminCount -eq 1}},
+                  @{N='hasspn';E={$_.ServicePrincipalName.Count -gt 0}},
+                  @{N='groups';E={$_.MemberOf}}
+
+$users | ConvertTo-Json -Depth 3 | Out-File "$outputPath\\users.json"
+Write-Host "    Found $($users.Count) users"
+
+# Collect Groups
+Write-Host "[*] Collecting groups..." -ForegroundColor Yellow
+$groups = Get-ADGroup -Filter * -Properties Members,AdminCount |
+    Select-Object @{N='name';E={$_.SamAccountName}},
+                  @{N='highvalue';E={$_.AdminCount -eq 1}},
+                  @{N='members';E={$_.Members}}
+
+$groups | ConvertTo-Json -Depth 3 | Out-File "$outputPath\\groups.json"
+Write-Host "    Found $($groups.Count) groups"
+
+# Collect Computers
+Write-Host "[*] Collecting computers..." -ForegroundColor Yellow
+$computers = Get-ADComputer -Filter * -Properties OperatingSystem,TrustedForDelegation,PrimaryGroup |
+    Select-Object @{N='name';E={$_.Name}},
+                  @{N='os';E={$_.OperatingSystem}},
+                  @{N='unconstraineddelegation';E={$_.TrustedForDelegation}}
+
+$computers | ConvertTo-Json -Depth 3 | Out-File "$outputPath\\computers.json"
+Write-Host "    Found $($computers.Count) computers"
+
+# Summary
+Write-Host ""
+Write-Host "=== Collection Complete ===" -ForegroundColor Green
+Write-Host "Data saved to: $outputPath"
+Write-Host ""
+Write-Host "[!] For full collection, use SharpHound:" -ForegroundColor Magenta
+Write-Host "    .\\SharpHound.exe -c All"`,
+      testCases: [
+        "✓ Collects user data with relevant properties",
+        "✓ Collects group memberships",
+        "✓ Exports in JSON format"
+      ],
+      explanation: "BloodHound needs data about users, groups, computers, sessions, and ACLs. SharpHound automates this, but understanding the underlying queries helps when SharpHound is blocked or you need to be stealthier."
+    }
   ]
 };
 

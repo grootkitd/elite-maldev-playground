@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Terminal, Shield, Code2, Cpu, Lock, Zap, Wrench, BookOpen, Trophy } from "lucide-react";
+import { Terminal, Shield, Code2, Cpu, Lock, Zap, Wrench, BookOpen, Trophy, Network, Target } from "lucide-react";
 import LessonViewer from "@/components/LessonViewer";
 import CodeEditor from "@/components/CodeEditor";
 import TerminalConsole from "@/components/TerminalConsole";
 import ChallengeSection from "@/components/ChallengeSection";
+import TechniquesChecklist from "@/components/TechniquesChecklist";
 
 const Index = () => {
   const [currentModule, setCurrentModule] = useState("windows-internals");
@@ -128,6 +129,20 @@ const Index = () => {
         "Step-by-Step Guided Projects",
         "Complete Working Code",
       ]
+    },
+    {
+      id: "active-directory",
+      title: "Active Directory Attacks",
+      icon: Network,
+      description: "Master AD enumeration, lateral movement, privilege escalation, and domain dominance techniques",
+      difficulty: "Expert",
+      topics: [
+        "Domain Enumeration & Recon",
+        "Kerberoasting & ASREPRoasting",
+        "Pass-the-Hash/Ticket Attacks",
+        "DCSync & Golden Ticket",
+        "Lateral Movement Techniques",
+      ]
     }
   ];
 
@@ -165,7 +180,7 @@ const Index = () => {
       <div className="container mx-auto px-6 py-8">
         <Tabs value={currentModule} onValueChange={setCurrentModule} className="space-y-6">
           {/* Module Navigation */}
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 gap-3 bg-card/50 p-3 h-auto rounded-xl backdrop-blur border border-border/50 shadow-lg">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-9 gap-3 bg-card/50 p-3 h-auto rounded-xl backdrop-blur border border-border/50 shadow-lg">
             {modules.map((module) => {
               const Icon = module.icon;
               const isActive = currentModule === module.id;
@@ -242,6 +257,12 @@ const Index = () => {
                     <Trophy className="h-4 w-4" />
                     Challenges
                   </TabsTrigger>
+                  {module.id === "active-directory" && (
+                    <TabsTrigger value="techniques" className="flex items-center gap-2 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md">
+                      <Target className="h-4 w-4" />
+                      Techniques
+                    </TabsTrigger>
+                  )}
                 </TabsList>
 
                 <TabsContent value="lessons" className="mt-0">
@@ -293,6 +314,28 @@ const Index = () => {
                     </div>
                   </div>
                 </TabsContent>
+
+                {module.id === "active-directory" && (
+                  <TabsContent value="techniques" className="mt-0">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <TechniquesChecklist moduleId={module.id} />
+                      <div className="space-y-4">
+                        <CodeEditor 
+                          moduleId={module.id}
+                          onExecute={(output) => {
+                            setConsoleOutput(prev => [...prev, ...output]);
+                          }}
+                        />
+                        <TerminalConsole 
+                          output={consoleOutput}
+                          onCommand={(cmd) => {
+                            setConsoleOutput(prev => [...prev, `> ${cmd}`, "Command executed successfully"]);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </TabsContent>
+                )}
               </Tabs>
             </TabsContent>
           ))}
