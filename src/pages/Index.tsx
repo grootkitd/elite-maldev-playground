@@ -233,12 +233,12 @@ const Index = () => {
 
               {/* Learning Interface with Tabs */}
               <Tabs defaultValue="lessons" className="space-y-4">
-                <TabsList className="bg-card/50 border border-border/50 p-1">
-                  <TabsTrigger value="lessons" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <TabsList className="inline-flex h-auto bg-card/50 border border-border/50 p-1 rounded-lg">
+                  <TabsTrigger value="lessons" className="flex items-center gap-2 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md">
                     <BookOpen className="h-4 w-4" />
                     Lessons
                   </TabsTrigger>
-                  <TabsTrigger value="challenges" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <TabsTrigger value="challenges" className="flex items-center gap-2 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md">
                     <Trophy className="h-4 w-4" />
                     Challenges
                   </TabsTrigger>
