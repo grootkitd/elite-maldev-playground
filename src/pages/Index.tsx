@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Terminal, Shield, Code2, Cpu, Lock, Zap, Wrench, BookOpen, Trophy, Network, Target,
-  ChevronRight, Sparkles, Flame, Menu, X, Github, ExternalLink
+  ChevronRight, Sparkles, Flame, Menu, X, Github, Map, Award, HelpCircle, Rocket
 } from "lucide-react";
 import LessonViewer from "@/components/LessonViewer";
 import CodeEditor from "@/components/CodeEditor";
@@ -14,9 +14,16 @@ import TerminalConsole from "@/components/TerminalConsole";
 import ChallengeSection from "@/components/ChallengeSection";
 import TechniquesChecklist from "@/components/TechniquesChecklist";
 import ProgressTracker from "@/components/ProgressTracker";
+import LearningRoadmap from "@/components/LearningRoadmap";
+import WelcomeOnboarding from "@/components/WelcomeOnboarding";
+import QuickTips from "@/components/QuickTips";
+import AchievementBadges from "@/components/AchievementBadges";
+import BeginnerGuide from "@/components/BeginnerGuide";
 
 const Index = () => {
   const [currentModule, setCurrentModule] = useState("fundamentals");
+  const [showOnboarding, setShowOnboarding] = useState(true);
+  const [activeView, setActiveView] = useState<"learn" | "roadmap">("learn");
   const [consoleOutput, setConsoleOutput] = useState<string[]>([
     "╔══════════════════════════════════════════════════════════════╗",
     "║  REDTEAM-DEV Terminal v2.0                                   ║",
@@ -29,6 +36,19 @@ const Index = () => {
     ""
   ]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Check if user has seen onboarding before
+  useEffect(() => {
+    const hasSeenOnboarding = localStorage.getItem("redteam-dev-onboarding");
+    if (hasSeenOnboarding) {
+      setShowOnboarding(false);
+    }
+  }, []);
+
+  const handleDismissOnboarding = () => {
+    localStorage.setItem("redteam-dev-onboarding", "true");
+    setShowOnboarding(false);
+  };
 
   const modules = [
     {
@@ -53,7 +73,7 @@ const Index = () => {
       shortTitle: "Internals",
       icon: Shield,
       description: "Master Windows architecture, processes, threads, and the Win32 API",
-      difficulty: "Advanced",
+      difficulty: "Intermediate",
       color: "primary",
       topics: [
         "Process & Thread Architecture",
@@ -64,13 +84,29 @@ const Index = () => {
       ]
     },
     {
+      id: "shellcode",
+      title: "Shellcode Basics",
+      shortTitle: "Shellcode",
+      icon: Cpu,
+      description: "Position-independent code and basic execution methods",
+      difficulty: "Intermediate",
+      color: "accent",
+      topics: [
+        "PIC Fundamentals",
+        "Memory Allocation",
+        "Execution Methods",
+        "Basic Payloads",
+        "Testing Techniques",
+      ]
+    },
+    {
       id: "process-injection",
       title: "Process Injection",
       shortTitle: "Injection",
       icon: Cpu,
       description: "Advanced memory manipulation and process injection techniques",
-      difficulty: "Expert",
-      color: "accent",
+      difficulty: "Advanced",
+      color: "warning",
       topics: [
         "Classic DLL Injection",
         "Process Hollowing",
@@ -85,7 +121,7 @@ const Index = () => {
       shortTitle: "Syscalls",
       icon: Terminal,
       description: "Direct syscall invocation and NTDLL internals",
-      difficulty: "Expert",
+      difficulty: "Advanced",
       color: "cyber-purple",
       topics: [
         "SSN (System Service Numbers)",
@@ -96,29 +132,13 @@ const Index = () => {
       ]
     },
     {
-      id: "pinvoke",
-      title: "P/Invoke & .NET",
-      shortTitle: "P/Invoke",
-      icon: Lock,
-      description: "C# unmanaged code interop and marshalling",
-      difficulty: "Advanced",
-      color: "cyber-blue",
-      topics: [
-        "P/Invoke Fundamentals",
-        "Structure Marshalling",
-        "Function Pointer Callbacks",
-        "D/Invoke Techniques",
-        "In-Memory Assembly Loading",
-      ]
-    },
-    {
       id: "evasion",
-      title: "Evasion Techniques",
+      title: "Defense Evasion",
       shortTitle: "Evasion",
       icon: Zap,
       description: "AV/EDR bypass and anti-analysis methods",
       difficulty: "Expert",
-      color: "warning",
+      color: "destructive",
       topics: [
         "AMSI Bypass Techniques",
         "ETW Patching",
@@ -128,35 +148,19 @@ const Index = () => {
       ]
     },
     {
-      id: "shellcode",
-      title: "Shellcode Development",
-      shortTitle: "Shellcode",
-      icon: Cpu,
-      description: "Position-independent code and payload development",
-      difficulty: "Expert",
-      color: "destructive",
-      topics: [
-        "Assembly Basics (x64)",
-        "PIC Development",
-        "Encoder/Decoder Stubs",
-        "Syscall Shellcode",
-        "Payload Encryption",
-      ]
-    },
-    {
-      id: "labs",
-      title: "Practical Labs",
-      shortTitle: "Labs",
-      icon: Wrench,
-      description: "Build real security tools step-by-step",
+      id: "pinvoke",
+      title: "P/Invoke & .NET",
+      shortTitle: "P/Invoke",
+      icon: Lock,
+      description: "C# unmanaged code interop and marshalling",
       difficulty: "Intermediate",
-      color: "success",
+      color: "cyber-blue",
       topics: [
-        "Process Memory Dumper",
-        "Memory Pattern Scanner",
-        "DLL Injector",
-        "Step-by-Step Guided Projects",
-        "Complete Working Code",
+        "P/Invoke Fundamentals",
+        "Structure Marshalling",
+        "Function Pointer Callbacks",
+        "D/Invoke Techniques",
+        "In-Memory Assembly Loading",
       ]
     },
     {
@@ -173,6 +177,22 @@ const Index = () => {
         "Pass-the-Hash/Ticket Attacks",
         "DCSync & Golden Ticket",
         "Lateral Movement Techniques",
+      ]
+    },
+    {
+      id: "labs",
+      title: "Practical Labs",
+      shortTitle: "Labs",
+      icon: Wrench,
+      description: "Build real security tools step-by-step",
+      difficulty: "All Levels",
+      color: "success",
+      topics: [
+        "Process Memory Dumper",
+        "Memory Pattern Scanner",
+        "DLL Injector",
+        "Step-by-Step Guided Projects",
+        "Complete Working Code",
       ]
     }
   ];
@@ -191,6 +211,14 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background bg-cyber-grid bg-grid">
+      {/* Welcome Onboarding Modal */}
+      {showOnboarding && (
+        <WelcomeOnboarding 
+          onGetStarted={handleDismissOnboarding}
+          onDismiss={handleDismissOnboarding}
+        />
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 glass-strong">
         <div className="container mx-auto px-4 py-3">
@@ -216,10 +244,32 @@ const Index = () => {
                     REDTEAM-DEV
                   </h1>
                   <p className="text-[10px] text-muted-foreground tracking-wider uppercase">
-                    Advanced Security Research
+                    Learn Offensive Security
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* View Toggle */}
+            <div className="hidden md:flex items-center gap-2 bg-secondary/30 rounded-lg p-1">
+              <Button
+                variant={activeView === "learn" ? "default" : "ghost"}
+                size="sm"
+                className="h-8 gap-2"
+                onClick={() => setActiveView("learn")}
+              >
+                <BookOpen className="h-4 w-4" />
+                Learn
+              </Button>
+              <Button
+                variant={activeView === "roadmap" ? "default" : "ghost"}
+                size="sm"
+                className="h-8 gap-2"
+                onClick={() => setActiveView("roadmap")}
+              >
+                <Map className="h-4 w-4" />
+                Roadmap
+              </Button>
             </div>
             
             <div className="flex items-center gap-3">
@@ -227,6 +277,14 @@ const Index = () => {
                 <Flame className="h-3 w-3" />
                 3 Day Streak
               </Badge>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8"
+                onClick={() => setShowOnboarding(true)}
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
               <Button variant="ghost" size="icon" className="h-8 w-8">
                 <Github className="h-4 w-4" />
               </Button>
@@ -238,61 +296,104 @@ const Index = () => {
       <div className="flex">
         {/* Sidebar */}
         <aside className={`
-          fixed lg:sticky top-[57px] left-0 z-40 h-[calc(100vh-57px)] w-64 
+          fixed lg:sticky top-[57px] left-0 z-40 h-[calc(100vh-57px)] w-72
           border-r border-border/50 glass-strong
           transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}>
           <ScrollArea className="h-full py-4">
-            <div className="px-3 space-y-1 stagger-fade-in">
-              {modules.map((module, index) => {
-                const Icon = module.icon;
-                const isActive = currentModule === module.id;
-                return (
-                  <button
-                    key={module.id}
-                    onClick={() => {
-                      setCurrentModule(module.id);
-                      setSidebarOpen(false);
-                    }}
-                    className={`
-                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
-                      transition-all duration-300 group
-                      ${isActive 
-                        ? 'bg-primary/20 border border-primary/40 shadow-glow-sm text-foreground' 
-                        : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'
-                      }
-                    `}
-                    style={{ animationDelay: `${index * 0.05}s` }}
-                  >
-                    <div className={`
-                      p-1.5 rounded-md transition-all duration-300
-                      ${isActive 
-                        ? 'bg-primary/30 text-primary' 
-                        : 'bg-muted text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary'
-                      }
-                    `}>
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate ${isActive ? 'text-foreground' : ''}`}>
-                        {module.shortTitle}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground truncate">
-                        {module.difficulty}
-                      </p>
-                    </div>
-                    {isActive && (
-                      <ChevronRight className="h-4 w-4 text-primary" />
-                    )}
-                  </button>
-                );
-              })}
+            {/* Mobile View Toggle */}
+            <div className="md:hidden px-3 mb-4">
+              <div className="flex items-center gap-2 bg-secondary/30 rounded-lg p-1">
+                <Button
+                  variant={activeView === "learn" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1 h-8 gap-2"
+                  onClick={() => setActiveView("learn")}
+                >
+                  <BookOpen className="h-4 w-4" />
+                  Learn
+                </Button>
+                <Button
+                  variant={activeView === "roadmap" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1 h-8 gap-2"
+                  onClick={() => setActiveView("roadmap")}
+                >
+                  <Map className="h-4 w-4" />
+                  Roadmap
+                </Button>
+              </div>
             </div>
+
+            {/* Module Navigation */}
+            <div className="px-3 mb-4">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">
+                Modules
+              </h3>
+              <div className="space-y-1">
+                {modules.map((module, index) => {
+                  const Icon = module.icon;
+                  const isActive = currentModule === module.id;
+                  return (
+                    <button
+                      key={module.id}
+                      onClick={() => {
+                        setCurrentModule(module.id);
+                        setActiveView("learn");
+                        setSidebarOpen(false);
+                      }}
+                      className={`
+                        w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
+                        transition-all duration-300 group
+                        ${isActive 
+                          ? 'bg-primary/20 border border-primary/40 shadow-glow-sm text-foreground' 
+                          : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'
+                        }
+                      `}
+                    >
+                      <div className={`
+                        p-1.5 rounded-md transition-all duration-300
+                        ${isActive 
+                          ? 'bg-primary/30 text-primary' 
+                          : 'bg-muted text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary'
+                        }
+                      `}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${isActive ? 'text-foreground' : ''}`}>
+                          {module.shortTitle}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          {module.difficulty}
+                        </p>
+                      </div>
+                      {isActive && (
+                        <ChevronRight className="h-4 w-4 text-primary" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className="mx-3 border-t border-border/50 my-4" />
             
-            {/* Progress Tracker in Sidebar */}
-            <div className="px-3 mt-6">
+            {/* Progress Tracker */}
+            <div className="px-3 mb-4">
               <ProgressTracker moduleId={currentModule} />
+            </div>
+
+            {/* Achievement Badges */}
+            <div className="px-3 mb-4">
+              <AchievementBadges />
+            </div>
+
+            {/* Beginner Guide */}
+            <div className="px-3">
+              <BeginnerGuide />
             </div>
           </ScrollArea>
         </aside>
@@ -300,160 +401,173 @@ const Index = () => {
         {/* Main Content */}
         <main className="flex-1 min-w-0">
           <div className="container mx-auto px-4 py-6 max-w-7xl">
-            {/* Module Header */}
-            <div className="mb-6 animate-slide-up">
-              <Card className="p-6 glass glow-box overflow-hidden relative">
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent" />
-                <div className="relative">
-                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <div className="p-2 rounded-lg bg-primary/20 border border-primary/30">
-                          {(() => {
-                            const Icon = selectedModule.icon;
-                            return <Icon className="h-5 w-5 text-primary" />;
-                          })()}
+            {activeView === "roadmap" ? (
+              /* Roadmap View */
+              <div className="animate-fade-in">
+                <LearningRoadmap 
+                  onSelectModule={(id) => {
+                    setCurrentModule(id);
+                    setActiveView("learn");
+                  }}
+                  currentModule={currentModule}
+                />
+              </div>
+            ) : (
+              /* Learning View */
+              <>
+                {/* Module Header */}
+                <div className="mb-6 animate-slide-up">
+                  <Card className="p-6 glass glow-box overflow-hidden relative">
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent" />
+                    <div className="relative">
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <div className="p-2 rounded-lg bg-primary/20 border border-primary/30">
+                              {(() => {
+                                const Icon = selectedModule.icon;
+                                return <Icon className="h-5 w-5 text-primary" />;
+                              })()}
+                            </div>
+                            <h2 className="text-2xl md:text-3xl font-bold font-display gradient-text">
+                              {selectedModule.title}
+                            </h2>
+                            <Badge className={`${getDifficultyColor(selectedModule.difficulty)} border`}>
+                              {selectedModule.difficulty}
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground text-sm md:text-base max-w-2xl">
+                            {selectedModule.description}
+                          </p>
                         </div>
-                        <h2 className="text-2xl md:text-3xl font-bold font-display gradient-text">
-                          {selectedModule.title}
-                        </h2>
-                        <Badge className={`${getDifficultyColor(selectedModule.difficulty)} border`}>
-                          {selectedModule.difficulty}
-                        </Badge>
                       </div>
-                      <p className="text-muted-foreground text-sm md:text-base max-w-2xl">
-                        {selectedModule.description}
-                      </p>
+                      
+                      {/* Topics */}
+                      <div className="mt-6 flex flex-wrap gap-2">
+                        {selectedModule.topics.map((topic, idx) => (
+                          <Badge 
+                            key={idx} 
+                            variant="outline" 
+                            className="text-xs bg-secondary/50 border-border/50 text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all cursor-default"
+                          >
+                            {topic}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  
-                  {/* Topics */}
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    {selectedModule.topics.map((topic, idx) => (
-                      <Badge 
-                        key={idx} 
-                        variant="outline" 
-                        className="text-xs bg-secondary/50 border-border/50 text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all cursor-default"
+                  </Card>
+                </div>
+
+                {/* Quick Tips for current module */}
+                <div className="mb-4">
+                  <QuickTips moduleId={currentModule} />
+                </div>
+
+                {/* Content Tabs */}
+                <Tabs defaultValue="lessons" className="space-y-4">
+                  <TabsList className="inline-flex h-auto glass p-1 rounded-xl">
+                    <TabsTrigger 
+                      value="lessons" 
+                      className="flex items-center gap-2 px-4 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+                    >
+                      <BookOpen className="h-4 w-4" />
+                      <span className="hidden sm:inline">Lessons</span>
+                    </TabsTrigger>
+                    <TabsTrigger 
+                      value="challenges" 
+                      className="flex items-center gap-2 px-4 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+                    >
+                      <Trophy className="h-4 w-4" />
+                      <span className="hidden sm:inline">Challenges</span>
+                    </TabsTrigger>
+                    {currentModule === "active-directory" && (
+                      <TabsTrigger 
+                        value="techniques" 
+                        className="flex items-center gap-2 px-4 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
                       >
-                        {topic}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </Card>
-            </div>
+                        <Target className="h-4 w-4" />
+                        <span className="hidden sm:inline">Techniques</span>
+                      </TabsTrigger>
+                    )}
+                  </TabsList>
 
-            {/* Content Tabs */}
-            <Tabs defaultValue="lessons" className="space-y-4">
-              <TabsList className="inline-flex h-auto glass p-1 rounded-xl">
-                <TabsTrigger 
-                  value="lessons" 
-                  className="flex items-center gap-2 px-4 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
-                >
-                  <BookOpen className="h-4 w-4" />
-                  <span className="hidden sm:inline">Lessons</span>
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="challenges" 
-                  className="flex items-center gap-2 px-4 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
-                >
-                  <Trophy className="h-4 w-4" />
-                  <span className="hidden sm:inline">Challenges</span>
-                </TabsTrigger>
-                {currentModule === "active-directory" && (
-                  <TabsTrigger 
-                    value="techniques" 
-                    className="flex items-center gap-2 px-4 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
-                  >
-                    <Target className="h-4 w-4" />
-                    <span className="hidden sm:inline">Techniques</span>
-                  </TabsTrigger>
-                )}
-              </TabsList>
-
-              <TabsContent value="lessons" className="mt-0 animate-fade-in">
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <LessonViewer moduleId={currentModule} />
-                  <div className="space-y-4">
-                    <CodeEditor 
-                      moduleId={currentModule}
-                      onExecute={(output) => {
-                        setConsoleOutput(prev => [...prev, ...output]);
-                      }}
-                    />
-                    <TerminalConsole 
-                      output={consoleOutput}
-                      onCommand={(cmd) => {
-                        setConsoleOutput(prev => [
-                          ...prev, 
-                          `❯ ${cmd}`,
-                          cmd === "help" 
-                            ? "[*] Available commands: clear, help, info, run" 
-                            : cmd === "clear"
-                            ? ""
-                            : cmd === "info"
-                            ? `[*] Current module: ${currentModule}`
-                            : "[+] Command executed"
-                        ]);
-                      }}
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="challenges" className="mt-0 animate-fade-in">
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <ChallengeSection moduleId={currentModule} />
-                  <div className="space-y-4">
-                    <CodeEditor 
-                      moduleId={currentModule}
-                      onExecute={(output) => {
-                        setConsoleOutput(prev => [...prev, ...output]);
-                      }}
-                    />
-                    <TerminalConsole 
-                      output={consoleOutput}
-                      onCommand={(cmd) => {
-                        setConsoleOutput(prev => [...prev, `❯ ${cmd}`, "[+] Command executed"]);
-                      }}
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-
-              {currentModule === "active-directory" && (
-                <TabsContent value="techniques" className="mt-0 animate-fade-in">
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                    <TechniquesChecklist moduleId={currentModule} />
-                    <div className="space-y-4">
-                      <CodeEditor 
-                        moduleId={currentModule}
-                        onExecute={(output) => {
-                          setConsoleOutput(prev => [...prev, ...output]);
-                        }}
-                      />
-                      <TerminalConsole 
-                        output={consoleOutput}
-                        onCommand={(cmd) => {
-                          setConsoleOutput(prev => [...prev, `❯ ${cmd}`, "[+] Command executed"]);
-                        }}
-                      />
+                  <TabsContent value="lessons" className="mt-0 animate-fade-in">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <LessonViewer moduleId={currentModule} />
+                      <div className="space-y-4">
+                        <CodeEditor 
+                          moduleId={currentModule}
+                          onExecute={(output) => {
+                            setConsoleOutput(prev => [...prev, ...output]);
+                          }}
+                        />
+                        <TerminalConsole 
+                          output={consoleOutput}
+                          onCommand={(cmd) => {
+                            setConsoleOutput(prev => [
+                              ...prev, 
+                              `❯ ${cmd}`,
+                              cmd === "help" 
+                                ? "[*] Available commands: clear, help, info, run" 
+                                : cmd === "clear"
+                                ? ""
+                                : cmd === "info"
+                                ? `[*] Current module: ${currentModule}`
+                                : "[+] Command executed"
+                            ]);
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                </TabsContent>
-              )}
-            </Tabs>
+                  </TabsContent>
+
+                  <TabsContent value="challenges" className="mt-0 animate-fade-in">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <ChallengeSection moduleId={currentModule} />
+                      <div className="space-y-4">
+                        <CodeEditor 
+                          moduleId={currentModule}
+                          onExecute={(output) => {
+                            setConsoleOutput(prev => [...prev, ...output]);
+                          }}
+                        />
+                        <TerminalConsole 
+                          output={consoleOutput}
+                          onCommand={(cmd) => {
+                            setConsoleOutput(prev => [...prev, `❯ ${cmd}`, "[+] Command executed"]);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {currentModule === "active-directory" && (
+                    <TabsContent value="techniques" className="mt-0 animate-fade-in">
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <TechniquesChecklist moduleId={currentModule} />
+                        <div className="space-y-4">
+                          <CodeEditor 
+                            moduleId={currentModule}
+                            onExecute={(output) => {
+                              setConsoleOutput(prev => [...prev, ...output]);
+                            }}
+                          />
+                          <TerminalConsole 
+                            output={consoleOutput}
+                            onCommand={(cmd) => {
+                              setConsoleOutput(prev => [...prev, `❯ ${cmd}`, "[+] Command executed"]);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </TabsContent>
+                  )}
+                </Tabs>
+              </>
+            )}
           </div>
         </main>
       </div>
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
     </div>
   );
 };
