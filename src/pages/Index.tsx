@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Terminal, Shield, Code2, Cpu, Lock, Zap, Wrench, BookOpen, Trophy, Network, Target,
-  ChevronRight, Sparkles, Flame, Menu, X, Github, Map, Award, HelpCircle, Rocket
+  ChevronRight, Sparkles, Flame, Menu, X, Github, Map, Award, HelpCircle, Rocket, Brain
 } from "lucide-react";
 import LessonViewer from "@/components/LessonViewer";
 import CodeEditor from "@/components/CodeEditor";
@@ -19,6 +19,10 @@ import WelcomeOnboarding from "@/components/WelcomeOnboarding";
 import QuickTips from "@/components/QuickTips";
 import AchievementBadges from "@/components/AchievementBadges";
 import BeginnerGuide from "@/components/BeginnerGuide";
+import DailyGoals from "@/components/DailyGoals";
+import ResourcesSection from "@/components/ResourcesSection";
+import ConceptCards from "@/components/ConceptCards";
+import QuizSection from "@/components/QuizSection";
 
 const Index = () => {
   const [currentModule, setCurrentModule] = useState("fundamentals");
@@ -380,6 +384,11 @@ const Index = () => {
 
             {/* Divider */}
             <div className="mx-3 border-t border-border/50 my-4" />
+
+            {/* Daily Goals */}
+            <div className="px-3 mb-4">
+              <DailyGoals />
+            </div>
             
             {/* Progress Tracker */}
             <div className="px-3 mb-4">
@@ -389,6 +398,11 @@ const Index = () => {
             {/* Achievement Badges */}
             <div className="px-3 mb-4">
               <AchievementBadges />
+            </div>
+
+            {/* Resources */}
+            <div className="px-3 mb-4">
+              <ResourcesSection moduleId={currentModule} />
             </div>
 
             {/* Beginner Guide */}
@@ -480,6 +494,13 @@ const Index = () => {
                       <Trophy className="h-4 w-4" />
                       <span className="hidden sm:inline">Challenges</span>
                     </TabsTrigger>
+                    <TabsTrigger 
+                      value="quiz" 
+                      className="flex items-center gap-2 px-4 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all"
+                    >
+                      <Brain className="h-4 w-4" />
+                      <span className="hidden sm:inline">Quiz</span>
+                    </TabsTrigger>
                     {currentModule === "active-directory" && (
                       <TabsTrigger 
                         value="techniques" 
@@ -524,6 +545,29 @@ const Index = () => {
                   <TabsContent value="challenges" className="mt-0 animate-fade-in">
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                       <ChallengeSection moduleId={currentModule} />
+                      <div className="space-y-4">
+                        <CodeEditor 
+                          moduleId={currentModule}
+                          onExecute={(output) => {
+                            setConsoleOutput(prev => [...prev, ...output]);
+                          }}
+                        />
+                        <TerminalConsole 
+                          output={consoleOutput}
+                          onCommand={(cmd) => {
+                            setConsoleOutput(prev => [...prev, `❯ ${cmd}`, "[+] Command executed"]);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="quiz" className="mt-0 animate-fade-in">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <div className="space-y-4">
+                        <QuizSection moduleId={currentModule} />
+                        <ConceptCards moduleId={currentModule} />
+                      </div>
                       <div className="space-y-4">
                         <CodeEditor 
                           moduleId={currentModule}
